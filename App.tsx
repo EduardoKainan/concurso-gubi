@@ -15,7 +15,6 @@ import {
   GraduationCap,
   Home,
   LayoutDashboard,
-  Medal,
   Menu,
   PlayCircle,
   RefreshCcw,
@@ -30,7 +29,7 @@ import {
 } from 'lucide-react';
 import { analystPriorityTrail, studyPlan, studyQuestions as localQuestions } from './data/studySeed';
 import { studyService } from './services/studyService';
-import { StudyDashboardData, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyViewKey } from './types';
+import { StudyDashboardData, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyReviewItem, StudyViewKey } from './types';
 
 const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<any> }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -56,6 +55,7 @@ const App: React.FC = () => {
   const [essayHistory, setEssayHistory] = useState<StudyEssayEntry[]>([]);
   const [selectedPromptId, setSelectedPromptId] = useState('');
   const [essayDraft, setEssayDraft] = useState('');
+  const [draftMeta, setDraftMeta] = useState<StudyEssayDraft | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingEssay, setSavingEssay] = useState(false);
@@ -70,12 +70,15 @@ const App: React.FC = () => {
       const data = await studyService.getDashboardData(loadedQuestions);
       const prompts = studyService.getEssayPrompts();
       const history = await studyService.getEssayHistory();
+      const savedDraft = studyService.getEssayDraft();
 
       setQuestionBank(loadedQuestions);
       setSelectedQuestion(loadedQuestions[0] || localQuestions[0]);
       setDashboardData(data);
       setEssayPrompts(prompts);
-      setSelectedPromptId(prompts[0]?.id || '');
+      setSelectedPromptId(savedDraft?.promptId || prompts[0]?.id || '');
+      setEssayDraft(savedDraft?.answer || '');
+      setDraftMeta(savedDraft);
       setEssayHistory(history);
       setLoading(false);
     };
@@ -83,13 +86,26 @@ const App: React.FC = () => {
     load();
   }, []);
 
+  useEffect(() => {
+    if (!selectedPromptId) return;
+    const timer = window.setTimeout(async () => {
+      const nextDraft = await studyService.saveEssayDraft(selectedPromptId, essayDraft);
+      setDraftMeta(nextDraft);
+    }, 500);
+
+    return () => window.clearTimeout(timer);
+  }, [essayDraft, selectedPromptId]);
+
   const overallProgress = useMemo(() => {
-    if (!dashboardData) return 0;
+    if (!dashboardData || !dashboardData.subjectProgress.length) return 0;
     return Math.round(dashboardData.subjectProgress.reduce((sum, item) => sum + item.progress, 0) / dashboardData.subjectProgress.length);
   }, [dashboardData]);
 
   const averageAccuracy = dashboardData?.summary.accuracy ?? 0;
   const totalReviews = dashboardData?.summary.pendingReviews ?? 0;
+  const recommendation = dashboardData?.recommendation;
+  const topWeakness = dashboardData?.topicPerformance?.[0];
+  const reviewDueNow = dashboardData?.reviewQueue.filter((item) => item.status !== 'scheduled') || [];
 
   const subjectOptions = useMemo(() => ['Todas', ...Array.from(new Set(questionBank.map((item) => item.subject)))], [questionBank]);
   const levelOptions = ['Todas', 'Fácil', 'Médio', 'Difícil'];
@@ -117,9 +133,7 @@ const App: React.FC = () => {
   const selectedPrompt = useMemo(() => essayPrompts.find((item) => item.id === selectedPromptId) || essayPrompts[0], [essayPrompts, selectedPromptId]);
 
   useEffect(() => {
-    if (!selectedPrompt && essayPrompts[0]) {
-      setSelectedPromptId(essayPrompts[0].id);
-    }
+    if (!selectedPrompt && essayPrompts[0]) setSelectedPromptId(essayPrompts[0].id);
   }, [selectedPrompt, essayPrompts]);
 
   const saveAttempt = async () => {
@@ -152,13 +166,13 @@ const App: React.FC = () => {
       subject: selectedPrompt.subject,
       topic: selectedPrompt.topic,
       answer: essayDraft.trim(),
+      status: 'finished',
     });
     setEssayHistory(history);
     setEssayDraft('');
+    setDraftMeta(null);
     setSavingEssay(false);
   };
-
-  const topWeakness = dashboardData?.errorInsights?.[0];
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -169,37 +183,71 @@ const App: React.FC = () => {
               <Flame size={16} /> Sequência de {dashboardData?.summary.currentStreak ?? 0} dias
             </div>
             <div>
-              <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Mentor de Concurso</p>
-              <h1 className="mt-2 text-3xl font-semibold text-white lg:text-5xl">Seu cockpit de aprovação ficou mais estratégico.</h1>
+              <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Treinador adaptativo</p>
+              <h1 className="mt-2 text-3xl font-semibold text-white lg:text-5xl">Seu cockpit agora recomenda a próxima sessão sozinho.</h1>
             </div>
-            <p className="text-slate-300">Agora o app combina filtros de questões, leitura dos erros por assunto, trilha prioritária do Analista Administrativo e módulo inicial de discursiva.</p>
+            <p className="text-slate-300">O motor cruza erros, revisões 24h/7d/14d, desempenho por tópico e histórico recente para priorizar o próximo passo.</p>
             <div className="flex flex-wrap gap-3">
               <button onClick={() => setCurrentView('questoes')} className="inline-flex items-center gap-2 rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400">
-                <PlayCircle size={18} /> Resolver bloco focado
+                <PlayCircle size={18} /> Resolver bloco sugerido
               </button>
               <button onClick={() => setCurrentView('discursivas')} className="inline-flex items-center gap-2 rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
                 <FileText size={18} /> Treinar discursiva
               </button>
             </div>
           </div>
-          <div className="grid w-full gap-4 sm:grid-cols-2 lg:w-[420px]">
-            <MetricCard icon={Target} label="Progresso total" value={`${overallProgress}%`} detail="Com base nas tentativas salvas" accent="from-indigo-500 to-cyan-400" />
+          <div className="grid w-full gap-4 sm:grid-cols-2 lg:w-[430px]">
+            <MetricCard icon={Target} label="Progresso total" value={`${overallProgress}%`} detail="Cobertura real do banco por disciplina" accent="from-indigo-500 to-cyan-400" />
             <MetricCard icon={Brain} label="Precisão média" value={`${averageAccuracy}%`} detail={`${dashboardData?.summary.totalCorrect ?? 0} acertos acumulados`} accent="from-fuchsia-500 to-pink-400" />
-            <MetricCard icon={Clock3} label="Revisões pendentes" value={`${totalReviews}`} detail="Prioridade nas próximas 48h" accent="from-amber-500 to-orange-400" />
-            <MetricCard icon={Trophy} label="Discursivas" value={`${essayHistory.length}`} detail="Rascunhos e respostas salvas" accent="from-emerald-500 to-lime-400" />
+            <MetricCard icon={Clock3} label="Fila de revisão" value={`${totalReviews}`} detail={`${dashboardData?.summary.dueReviews ?? 0} vencendo agora`} accent="from-amber-500 to-orange-400" />
+            <MetricCard icon={Trophy} label="Discursivas" value={`${essayHistory.length}`} detail="Com autosave e feedback rápido" accent="from-emerald-500 to-lime-400" />
           </div>
         </div>
       </section>
 
-      <section className="grid gap-6 xl:grid-cols-[1.45fr,0.95fr]">
+      {recommendation && (
+        <section className={`${panel} overflow-hidden`}>
+          <div className="grid gap-0 xl:grid-cols-[1.15fr,0.85fr]">
+            <div className="border-b border-white/10 p-6 xl:border-b-0 xl:border-r xl:p-8">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Próxima sessão recomendada</p>
+                  <h2 className="mt-2 text-2xl font-semibold text-white">{recommendation.title}</h2>
+                </div>
+                <span className={`rounded-full px-3 py-1 text-sm ${recommendation.priority === 'alta' ? 'bg-rose-500/10 text-rose-200' : recommendation.priority === 'media' ? 'bg-amber-500/10 text-amber-200' : 'bg-emerald-500/10 text-emerald-200'}`}>
+                  Prioridade {recommendation.priority}
+                </span>
+              </div>
+              <p className="mt-4 text-slate-300">{recommendation.reason}</p>
+              <div className="mt-5 flex flex-wrap gap-2 text-sm text-slate-300">
+                <Tag>{recommendation.subject}</Tag>
+                <Tag>{recommendation.topic}</Tag>
+                <Tag>{recommendation.targetQuestions} questões</Tag>
+                <Tag>{recommendation.estimatedMinutes} min</Tag>
+                <Tag>Modo {recommendation.focusMode}</Tag>
+              </div>
+            </div>
+            <div className="p-6 xl:p-8">
+              <h3 className="font-semibold text-white">Execução sugerida</h3>
+              <div className="mt-4 space-y-3 text-sm text-slate-300">
+                <ActionItem done={recommendation.reviewCount > 0} label={`Começar com ${recommendation.reviewCount} revisão(ões) pendentes`} />
+                <ActionItem done={false} label={`Atacar ${recommendation.targetQuestions} questões de ${recommendation.subject}`} />
+                <ActionItem done={false} label={`Fechar com leitura de justificativas em ${recommendation.topic}`} />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="grid gap-6 xl:grid-cols-[1.25fr,0.75fr]">
         <div className={`${panel} p-6`}>
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold text-white">Disciplinas prioritárias</h2>
-              <p className="text-sm text-slate-400">Seed + desempenho salvo</p>
+              <h2 className="text-xl font-semibold text-white">Disciplinas com momentum real</h2>
+              <p className="text-sm text-slate-400">Precisão, carga de erro e cobertura do banco</p>
             </div>
             <button onClick={() => setCurrentView('evolucao')} className="inline-flex items-center gap-2 text-sm text-indigo-300 hover:text-indigo-200">
-              Ver evolução <ChevronRight size={16} />
+              Ver análise profunda <ChevronRight size={16} />
             </button>
           </div>
           <div className="space-y-4">
@@ -208,11 +256,11 @@ const App: React.FC = () => {
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-medium text-white">{item.subject}</h3>
-                    <p className="text-sm text-slate-400">Precisão {item.accuracy}% • {item.pendingReviews} revisões pendentes • {item.attempts} tentativas</p>
+                    <p className="text-sm text-slate-400">{item.correct} acertos • {item.wrong} erros • {item.pendingReviews} revisões • momentum {item.studyMomentum}</p>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-slate-300">
                     <span className="rounded-full bg-white/5 px-3 py-1">🔥 {item.streak} dias</span>
-                    <span className="rounded-full bg-white/5 px-3 py-1">{item.progress}% concluído</span>
+                    <span className="rounded-full bg-white/5 px-3 py-1">{item.accuracy}%</span>
                   </div>
                 </div>
                 <div className="mt-4 h-3 rounded-full bg-white/5">
@@ -226,23 +274,29 @@ const App: React.FC = () => {
         <div className="space-y-6">
           <div className={`${panel} p-6`}>
             <div className="mb-4 flex items-center gap-3">
-              <Medal className="text-amber-300" />
+              <CalendarDays className="text-amber-300" />
               <div>
-                <h2 className="font-semibold text-white">Missão de hoje</h2>
-                <p className="text-sm text-slate-400">Bloco pensado para 2h líquidas</p>
+                <h2 className="font-semibold text-white">Fila temporal de revisão</h2>
+                <p className="text-sm text-slate-400">24h, 7d e 14d baseados em erro</p>
               </div>
             </div>
-            <ul className="space-y-3 text-sm text-slate-300">
-              <li className="flex items-center gap-3 rounded-2xl bg-white/5 p-3"><CheckCircle2 size={16} className="text-emerald-400" /> Revisar {topWeakness?.topic || 'Português'} por 20 min</li>
-              <li className="flex items-center gap-3 rounded-2xl bg-indigo-500/10 p-3"><Circle size={16} className="text-indigo-300" /> Resolver 15 questões da trilha prioritária</li>
-              <li className="flex items-center gap-3 rounded-2xl bg-white/5 p-3"><Circle size={16} className="text-slate-500" /> Escrever 1 discursiva curta</li>
-            </ul>
+            <div className="space-y-3">
+              {(dashboardData?.reviewQueue || []).slice(0, 4).map((item) => (
+                <ReviewQueueCard key={item.id} item={item} />
+              ))}
+              {!(dashboardData?.reviewQueue || []).length && (
+                <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-slate-400">
+                  Nenhuma revisão criada ainda. Os erros alimentam a fila automaticamente.
+                </div>
+              )}
+            </div>
           </div>
+
           <div className={`${panel} p-6`}>
             <h2 className="font-semibold text-white">Radar do mentor</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <InsightCard title="Persistência ativa" description={dashboardData?.source === 'supabase' ? 'Tentativas sincronizadas no Supabase.' : 'Fallback local ativo para não travar o estudo.'} />
-              <InsightCard title="Principal gargalo" description={topWeakness ? `${topWeakness.subject} • ${topWeakness.topic} (${topWeakness.totalErrors} erros)` : 'Ainda sem massa crítica de erros. Resolva mais questões para montar o painel.'} />
+              <InsightCard title="Persistência ativa" description={dashboardData?.source === 'supabase' ? 'Tentativas e discursivas sincronizadas no Supabase quando as tabelas existem.' : 'Fallback local ativo para não travar o estudo.'} />
+              <InsightCard title="Maior fragilidade" description={topWeakness ? `${topWeakness.subject} • ${topWeakness.topic} (${topWeakness.accuracy}% de precisão)` : 'Ainda sem massa crítica. Resolva mais questões para calibrar o motor.'} />
               <InsightCard title="Última atividade" description={dashboardData?.summary.lastAttemptAt ? new Date(dashboardData.summary.lastAttemptAt).toLocaleString('pt-BR') : 'Nenhuma tentativa salva nesta sessão ainda.'} />
             </div>
           </div>
@@ -283,6 +337,13 @@ const App: React.FC = () => {
           <div className="mt-4 rounded-2xl bg-indigo-500/10 p-4 text-sm text-indigo-100">
             {filteredQuestions.length} questões no bloco atual.
           </div>
+          {recommendation && (
+            <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
+              <p className="font-medium">Recomendação do motor</p>
+              <p className="mt-1">{recommendation.subject} • {recommendation.topic}</p>
+              <p className="mt-2 text-amber-50/90">Meta: {recommendation.targetQuestions} questões + {recommendation.reviewCount} revisão(ões).</p>
+            </div>
+          )}
         </div>
 
         <div className={`${panel} p-4`}>
@@ -376,7 +437,7 @@ const App: React.FC = () => {
                   <p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p>
                 </div>
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
-                  {lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso.' : 'Selecione uma alternativa para salvar o resultado.'}
+                  {lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso. Se errou, a revisão entra sozinha na fila temporal.' : 'Selecione uma alternativa para salvar o resultado.'}
                 </div>
               </div>
             )}
@@ -394,8 +455,8 @@ const App: React.FC = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Plano de estudos</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Trilha semanal + rota prioritária do Analista Administrativo.</h1>
-            <p className="mt-2 text-slate-400">Planejamento mockado com foco em matérias de maior retorno para estudo real.</p>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Trilha semanal com camada adaptativa em cima.</h1>
+            <p className="mt-2 text-slate-400">O plano-base segue fixo, mas a recomendação diária muda conforme erros, revisões vencidas e matérias fracas.</p>
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <MiniStat label="Horas previstas" value="11h" />
@@ -458,7 +519,7 @@ const App: React.FC = () => {
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <ChecklistItem done label="Definir edital e peso por disciplina" />
               <ChecklistItem done label="Separar caderno de erros" />
-              <ChecklistItem done={Boolean(dashboardData?.summary.lastAttemptAt)} label="Salvar primeiras tentativas" />
+              <ChecklistItem done={Boolean(dashboardData?.summary.lastAttemptAt)} label="Calibrar recomendação com tentativas reais" />
               <ChecklistItem done={essayHistory.length > 0} label="Registrar primeira discursiva" />
             </div>
           </div>
@@ -473,7 +534,7 @@ const App: React.FC = () => {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
           <div>
             <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Evolução</p>
-            <h1 className="mt-2 text-3xl font-semibold text-white">Desempenho por disciplina e mapa de erros por assunto.</h1>
+            <h1 className="mt-2 text-3xl font-semibold text-white">Painel profundo por disciplina, tópico e revisão.</h1>
           </div>
           <div className="flex gap-3 text-sm text-slate-300">
             <span className="rounded-full bg-white/5 px-4 py-2">Janela: acumulado local + Supabase</span>
@@ -484,16 +545,22 @@ const App: React.FC = () => {
 
       <section className="grid gap-6 lg:grid-cols-3">
         <div className={`${panel} p-6 lg:col-span-2`}>
-          <h2 className="mb-5 text-xl font-semibold text-white">Precisão por disciplina</h2>
+          <h2 className="mb-5 text-xl font-semibold text-white">Precisão e cobertura por disciplina</h2>
           <div className="space-y-4">
             {(dashboardData?.subjectProgress || []).map((point) => (
-              <div key={point.subject}>
-                <div className="mb-2 flex items-center justify-between text-sm text-slate-300">
+              <div key={point.subject} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+                <div className="mb-3 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
                   <span>{point.subject}</span>
-                  <span>{point.accuracy}%</span>
+                  <span>{point.accuracy}% precisão • {point.progress}% cobertura</span>
                 </div>
                 <div className="h-3 rounded-full bg-white/5">
                   <div className="h-3 rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-fuchsia-500" style={{ width: `${point.accuracy}%` }} />
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-4">
+                  <MiniPill label="Acertos" value={`${point.correct}`} />
+                  <MiniPill label="Erros" value={`${point.wrong}`} />
+                  <MiniPill label="Revisões" value={`${point.pendingReviews}`} />
+                  <MiniPill label="Momentum" value={`${point.studyMomentum}`} />
                 </div>
               </div>
             ))}
@@ -515,30 +582,53 @@ const App: React.FC = () => {
         </div>
       </section>
 
-      <section className={`${panel} p-6`}>
-        <div className="mb-5 flex items-center justify-between">
-          <div>
-            <h2 className="text-xl font-semibold text-white">Painel de erros por assunto</h2>
-            <p className="text-sm text-slate-400">Baseado nas tentativas já salvas</p>
-          </div>
-          <span className="rounded-full bg-rose-500/10 px-3 py-1 text-sm text-rose-200">Top {dashboardData?.errorInsights.length || 0}</span>
-        </div>
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {(dashboardData?.errorInsights || []).map((item) => (
-            <div key={`${item.subject}-${item.topic}`} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
-              <p className="text-sm text-rose-200">{item.subject}</p>
-              <h3 className="mt-1 font-medium text-white">{item.topic}</h3>
-              <div className="mt-4 grid grid-cols-3 gap-2 text-center text-sm">
-                <MiniPill label="Erros" value={`${item.totalErrors}`} />
-                <MiniPill label="Tentativas" value={`${item.totalAttempts}`} />
-                <MiniPill label="Precisão" value={`${item.accuracy}%`} />
-              </div>
-              <p className="mt-4 text-xs text-slate-500">Última ocorrência: {item.lastAttemptAt ? new Date(item.lastAttemptAt).toLocaleString('pt-BR') : 'sem registro'}</p>
+      <section className="grid gap-6 xl:grid-cols-[0.92fr,1.08fr]">
+        <div className={`${panel} p-6`}>
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Fila de revisão inteligente</h2>
+              <p className="text-sm text-slate-400">Baseada em erros com janelas 24h, 7d e 14d</p>
             </div>
-          ))}
-          {!(dashboardData?.errorInsights || []).length && (
-            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-slate-400">Ainda não há erros suficientes para montar o painel. Resolva algumas questões e volte aqui.</div>
-          )}
+            <span className="rounded-full bg-amber-500/10 px-3 py-1 text-sm text-amber-200">{reviewDueNow.length} urgentes</span>
+          </div>
+          <div className="space-y-3">
+            {(dashboardData?.reviewQueue || []).map((item) => <ReviewQueueCard key={item.id} item={item} />)}
+            {!(dashboardData?.reviewQueue || []).length && (
+              <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-slate-400">Nenhuma revisão montada ainda.</div>
+            )}
+          </div>
+        </div>
+
+        <div className={`${panel} p-6`}>
+          <div className="mb-5 flex items-center justify-between">
+            <div>
+              <h2 className="text-xl font-semibold text-white">Desempenho por tópico</h2>
+              <p className="text-sm text-slate-400">Leitura granular para atacar assunto fraco</p>
+            </div>
+            <span className="rounded-full bg-rose-500/10 px-3 py-1 text-sm text-rose-200">Top {dashboardData?.topicPerformance.length || 0}</span>
+          </div>
+          <div className="space-y-3">
+            {(dashboardData?.topicPerformance || []).slice(0, 12).map((item) => (
+              <div key={`${item.subject}-${item.topic}`} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-indigo-300">{item.subject}</p>
+                    <h3 className="font-medium text-white">{item.topic}</h3>
+                  </div>
+                  <span className={`rounded-full px-3 py-1 text-xs ${item.averageResponseLabel === 'crítico' ? 'bg-rose-500/10 text-rose-200' : item.averageResponseLabel === 'atenção' ? 'bg-amber-500/10 text-amber-200' : 'bg-emerald-500/10 text-emerald-200'}`}>
+                    {item.averageResponseLabel}
+                  </span>
+                </div>
+                <div className="mt-4 grid grid-cols-4 gap-2 text-center text-sm">
+                  <MiniPill label="Tent." value={`${item.attempts}`} />
+                  <MiniPill label="Acertos" value={`${item.correct}`} />
+                  <MiniPill label="Erros" value={`${item.errors}`} />
+                  <MiniPill label="Precisão" value={`${item.accuracy}%`} />
+                </div>
+                <p className="mt-3 text-xs text-slate-500">Última ocorrência: {item.lastAttemptAt ? new Date(item.lastAttemptAt).toLocaleString('pt-BR') : 'sem registro'}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
     </div>
@@ -551,8 +641,8 @@ const App: React.FC = () => {
           <div className="mb-4 flex items-center gap-3">
             <FileText className="text-cyan-300" />
             <div>
-              <h1 className="text-2xl font-semibold text-white">Módulo inicial de discursiva</h1>
-              <p className="text-sm text-slate-400">Prompt guiado + estrutura + histórico básico persistido.</p>
+              <h1 className="text-2xl font-semibold text-white">Discursiva com autosave</h1>
+              <p className="text-sm text-slate-400">Prompt guiado, rascunho persistido e feedback rápido de estrutura.</p>
             </div>
           </div>
           <div>
@@ -587,6 +677,12 @@ const App: React.FC = () => {
                 </div>
               </div>
 
+              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+                <MiniStat label="Palavras" value={`${essayDraft.trim() ? essayDraft.trim().split(/\s+/).filter(Boolean).length : 0}`} />
+                <MiniStat label="Status" value={draftMeta ? 'rascunho' : 'vazio'} />
+                <MiniStat label="Últ. save" value={draftMeta?.updatedAt ? new Date(draftMeta.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--'} />
+              </div>
+
               <div className="mt-5">
                 <label className="mb-2 block text-sm text-slate-400">Seu rascunho</label>
                 <textarea value={essayDraft} onChange={(e) => setEssayDraft(e.target.value)} rows={12} placeholder="Escreva aqui sua introdução, desenvolvimento e conclusão..." className="w-full rounded-3xl border border-white/10 bg-slate-900/70 p-4 text-sm text-white outline-none placeholder:text-slate-500" />
@@ -594,9 +690,9 @@ const App: React.FC = () => {
 
               <div className="mt-4 flex flex-wrap gap-3">
                 <button onClick={saveEssay} disabled={!essayDraft.trim() || savingEssay} className="rounded-2xl bg-cyan-500 px-5 py-3 font-medium text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60">
-                  {savingEssay ? 'Salvando...' : 'Salvar discursiva'}
+                  {savingEssay ? 'Salvando...' : 'Finalizar discursiva'}
                 </button>
-                <button onClick={() => setEssayDraft('')} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
+                <button onClick={() => { setEssayDraft(''); setDraftMeta(null); studyService.saveEssayDraft(selectedPromptId, ''); }} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
                   Limpar rascunho
                 </button>
               </div>
@@ -606,8 +702,8 @@ const App: React.FC = () => {
       </div>
 
       <div className={`${panel} p-6`}>
-        <h2 className="text-xl font-semibold text-white">Histórico básico</h2>
-        <p className="mt-1 text-sm text-slate-400">Fallback local ativo e tentativa de sync com Supabase se a tabela existir.</p>
+        <h2 className="text-xl font-semibold text-white">Histórico e feedback</h2>
+        <p className="mt-1 text-sm text-slate-400">Fallback local ativo e sync com Supabase quando as tabelas existem.</p>
         <div className="mt-5 space-y-4">
           {essayHistory.map((item) => (
             <div key={item.id} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
@@ -618,11 +714,20 @@ const App: React.FC = () => {
                 </div>
                 <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">{new Date(item.createdAt).toLocaleDateString('pt-BR')}</span>
               </div>
-              <p className="mt-3 line-clamp-5 text-sm text-slate-300 whitespace-pre-wrap">{item.answer}</p>
+              <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+                <Tag>{item.wordCount} palavras</Tag>
+                <Tag>{item.status}</Tag>
+              </div>
+              {item.feedback?.length ? (
+                <ul className="mt-3 space-y-2 text-sm text-cyan-100">
+                  {item.feedback.map((feedback) => <li key={feedback}>• {feedback}</li>)}
+                </ul>
+              ) : null}
+              <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300 line-clamp-5">{item.answer}</p>
             </div>
           ))}
           {!essayHistory.length && (
-            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-slate-400">Nenhuma discursiva salva ainda. Use um prompt ao lado e registre seu primeiro texto.</div>
+            <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-slate-400">Nenhuma discursiva salva ainda. O rascunho já fica salvo automaticamente enquanto você escreve.</div>
           )}
         </div>
       </div>
@@ -634,7 +739,7 @@ const App: React.FC = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.25),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(45,212,191,0.12),_transparent_30%)]" />
       <div className="relative flex min-h-screen">
         <aside className="hidden w-80 shrink-0 border-r border-white/10 bg-slate-950/80 p-6 lg:flex lg:flex-col">
-          <SidebarContent currentView={currentView} onChangeView={setCurrentView} source={dashboardData?.source ?? 'local'} />
+          <SidebarContent currentView={currentView} onChangeView={setCurrentView} source={dashboardData?.source ?? 'local'} recommendation={recommendation?.subject || 'Aguardando histórico'} />
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
@@ -696,7 +801,7 @@ const App: React.FC = () => {
                 <X size={18} />
               </button>
             </div>
-            <SidebarContent currentView={currentView} onChangeView={(view) => { setCurrentView(view); setMenuOpen(false); }} source={dashboardData?.source ?? 'local'} />
+            <SidebarContent currentView={currentView} onChangeView={(view) => { setCurrentView(view); setMenuOpen(false); }} source={dashboardData?.source ?? 'local'} recommendation={recommendation?.subject || 'Aguardando histórico'} />
           </div>
         </div>
       )}
@@ -704,14 +809,14 @@ const App: React.FC = () => {
   );
 };
 
-const SidebarContent = ({ currentView, onChangeView, source }: { currentView: StudyViewKey; onChangeView: (view: StudyViewKey) => void; source: 'supabase' | 'local' }) => (
+const SidebarContent = ({ currentView, onChangeView, source, recommendation }: { currentView: StudyViewKey; onChangeView: (view: StudyViewKey) => void; source: 'supabase' | 'local'; recommendation: string }) => (
   <>
     <div className="mb-8">
       <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white shadow-lg shadow-indigo-900/30">
         <GraduationCap size={28} />
       </div>
       <h2 className="mt-4 text-2xl font-semibold text-white">Concurso Mentor</h2>
-      <p className="mt-2 text-sm text-slate-400">Questões, trilha, painel de erros e discursiva em um fluxo só.</p>
+      <p className="mt-2 text-sm text-slate-400">Questões, revisão temporal, analytics por tópico e discursiva em um fluxo só.</p>
     </div>
 
     <nav className="space-y-2">
@@ -730,11 +835,11 @@ const SidebarContent = ({ currentView, onChangeView, source }: { currentView: St
     <div className="mt-8 rounded-3xl border border-white/10 bg-white/5 p-5">
       <div className="flex items-center gap-3">
         <Home className="text-emerald-300" size={18} />
-        <p className="font-medium text-white">Plano rápido de hoje</p>
+        <p className="font-medium text-white">Alvo atual</p>
       </div>
-      <p className="mt-3 text-sm text-slate-300">• 1 bloco da trilha prioritária
-        <br />• Revisar painel de erros
-        <br />• 1 discursiva curta
+      <p className="mt-3 text-sm text-slate-300">• Próxima disciplina: {recommendation}
+        <br />• Revisão temporal automática
+        <br />• Discursiva com autosave
       </p>
     </div>
 
@@ -785,6 +890,36 @@ const ChecklistItem = ({ done, label }: { done: boolean; label: string }) => (
     {done ? <CheckCircle2 size={18} className="text-emerald-400" /> : <Circle size={18} className="text-slate-500" />}
     <span className={done ? 'text-white' : 'text-slate-300'}>{label}</span>
   </div>
+);
+
+const ActionItem = ({ done, label }: { done: boolean; label: string }) => (
+  <div className="flex items-center gap-3 rounded-2xl bg-white/5 p-3">
+    {done ? <CheckCircle2 size={16} className="text-emerald-400" /> : <Circle size={16} className="text-slate-500" />}
+    <span>{label}</span>
+  </div>
+);
+
+const ReviewQueueCard = ({ item }: { item: StudyReviewItem }) => (
+  <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
+    <div className="flex items-start justify-between gap-3">
+      <div>
+        <p className="text-sm text-slate-400">{item.subject}</p>
+        <h3 className="font-medium text-white">{item.topic}</h3>
+      </div>
+      <span className={`rounded-full px-3 py-1 text-xs ${item.status === 'overdue' ? 'bg-rose-500/10 text-rose-200' : item.status === 'due_soon' ? 'bg-amber-500/10 text-amber-200' : 'bg-white/10 text-slate-300'}`}>
+        {item.stage} • {item.status === 'overdue' ? 'atrasada' : item.status === 'due_soon' ? 'vence já' : 'agendada'}
+      </span>
+    </div>
+    <div className="mt-3 flex flex-wrap gap-2 text-xs text-slate-300">
+      <Tag>{item.errorCount} erro(s)</Tag>
+      <Tag>Questão #{item.questionId}</Tag>
+    </div>
+    <p className="mt-3 text-xs text-slate-500">Revisar em {new Date(item.dueAt).toLocaleString('pt-BR')}</p>
+  </div>
+);
+
+const Tag = ({ children }: { children: React.ReactNode }) => (
+  <span className="rounded-full bg-white/5 px-3 py-1 text-sm text-slate-300">{children}</span>
 );
 
 export default App;

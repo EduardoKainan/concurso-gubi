@@ -795,11 +795,11 @@ export const analystPriorityTrail: StudyPriorityTrailItem[] = [
 ];
 
 export const studySubjectProgressSeed: StudySubjectProgress[] = [
-  { subject: 'Administração Pública', progress: 18, streak: 2, accuracy: 0, pendingReviews: 10, attempts: 0 },
-  { subject: 'Direito Administrativo e Licitações', progress: 22, streak: 2, accuracy: 0, pendingReviews: 12, attempts: 0 },
-  { subject: 'Português', progress: 30, streak: 3, accuracy: 0, pendingReviews: 8, attempts: 0 },
-  { subject: 'Informática', progress: 16, streak: 1, accuracy: 0, pendingReviews: 9, attempts: 0 },
-  { subject: 'Raciocínio Lógico', progress: 20, streak: 2, accuracy: 0, pendingReviews: 11, attempts: 0 },
+  { subject: 'Administração Pública', progress: 18, streak: 2, accuracy: 0, pendingReviews: 10, attempts: 0, correct: 0, wrong: 0, totalQuestions: 0, studyMomentum: 52 },
+  { subject: 'Direito Administrativo e Licitações', progress: 22, streak: 2, accuracy: 0, pendingReviews: 12, attempts: 0, correct: 0, wrong: 0, totalQuestions: 0, studyMomentum: 48 },
+  { subject: 'Português', progress: 30, streak: 3, accuracy: 0, pendingReviews: 8, attempts: 0, correct: 0, wrong: 0, totalQuestions: 0, studyMomentum: 58 },
+  { subject: 'Informática', progress: 16, streak: 1, accuracy: 0, pendingReviews: 9, attempts: 0, correct: 0, wrong: 0, totalQuestions: 0, studyMomentum: 46 },
+  { subject: 'Raciocínio Lógico', progress: 20, streak: 2, accuracy: 0, pendingReviews: 11, attempts: 0, correct: 0, wrong: 0, totalQuestions: 0, studyMomentum: 50 },
 ];
 
 export const studySummarySeed: StudySummary = {
@@ -811,6 +811,8 @@ export const studySummarySeed: StudySummary = {
   completedToday: 0,
   simulatedExams: 0,
   weeklyGoal: 120,
+  weakSubjects: [],
+  dueReviews: 0,
 };
 
 export const studyEssayPrompts: StudyEssayPrompt[] = [

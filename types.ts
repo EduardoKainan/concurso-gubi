@@ -11,7 +11,7 @@ export interface Organization {
   name: string;
   slug?: string;
   created_at: string;
-  meta_api_token?: string; // Novo campo para o Token da API do Facebook/Meta
+  meta_api_token?: string;
 }
 
 export interface UserProfile {
@@ -31,7 +31,6 @@ export interface OrganizationInvite {
   status: 'pending' | 'accepted';
 }
 
-// Interfaces do Super Admin
 export interface AdminOrgMetric {
   id: string;
   name: string;
@@ -39,7 +38,7 @@ export interface AdminOrgMetric {
   total_users: number;
   total_clients: number;
   total_projects: number;
-  status: 'active' | 'inactive'; // Simulação de status de assinatura
+  status: 'active' | 'inactive';
 }
 
 export interface AdminUserMetric {
@@ -53,7 +52,7 @@ export interface AdminUserMetric {
 
 export interface Client {
   id: string;
-  organization_id?: string; // Novo campo SaaS
+  organization_id?: string;
   name: string;
   company: string;
   email?: string;
@@ -66,16 +65,10 @@ export interface Client {
   roi: number;
   last_updated: string;
   created_at?: string;
-  
-  // Metas de Performance (AdRoi Intelligence)
   target_roas?: number;
   target_cpa?: number;
   budget_limit?: number;
-
-  // CRM Lite Feature Flag
   crm_enabled?: boolean;
-
-  // Controle Financeiro
   current_balance?: number;
   is_prepaid?: boolean;
 }
@@ -86,7 +79,7 @@ export interface ClientNote {
   organization_id?: string;
   title: string;
   content: string;
-  date: string; // Data do evento/reunião
+  date: string;
   created_at?: string;
   is_pinned?: boolean;
 }
@@ -124,7 +117,7 @@ export interface Campaign {
   spend: number;
   revenue: number;
   leads: number;
-  purchases: number; 
+  purchases: number;
   roas: number;
   impressions: number;
   clicks: number;
@@ -171,12 +164,12 @@ export interface Task {
   title: string;
   completed: boolean;
   priority: 'low' | 'medium' | 'high';
-  category: TaskCategory; 
-  durationMinutes?: number; 
+  category: TaskCategory;
+  durationMinutes?: number;
   projectId?: string;
   dueDate?: string;
-  clientId?: string; 
-  clientName?: string; 
+  clientId?: string;
+  clientName?: string;
 }
 
 export interface Project {
@@ -198,8 +191,9 @@ export interface Goal {
 export type ViewState = 'DASHBOARD' | 'CLIENT_DETAIL' | 'SETTINGS' | 'TASKS' | 'HELP' | 'SUPER_ADMIN' | 'REPORTS';
 
 export type StudyViewKey = 'dashboard' | 'questoes' | 'plano' | 'evolucao' | 'discursivas';
-
 export type StudyQuestionLevel = 'Fácil' | 'Médio' | 'Difícil';
+export type StudyReviewStage = '24h' | '7d' | '14d';
+export type StudyRecommendationPriority = 'alta' | 'media' | 'baixa';
 
 export interface StudyQuestionItem {
   id: number;
@@ -257,6 +251,46 @@ export interface StudySubjectProgress {
   accuracy: number;
   pendingReviews: number;
   attempts: number;
+  correct: number;
+  wrong: number;
+  totalQuestions: number;
+  lastAttemptAt?: string;
+  studyMomentum: number;
+}
+
+export interface StudyTopicPerformance {
+  subject: string;
+  topic: string;
+  attempts: number;
+  correct: number;
+  errors: number;
+  accuracy: number;
+  averageResponseLabel: 'forte' | 'atenção' | 'crítico';
+  lastAttemptAt?: string;
+}
+
+export interface StudyReviewItem {
+  id: string;
+  questionId: number;
+  subject: string;
+  topic: string;
+  stage: StudyReviewStage;
+  dueAt: string;
+  errorCount: number;
+  lastAttemptAt: string;
+  status: 'overdue' | 'due_soon' | 'scheduled';
+}
+
+export interface StudyRecommendation {
+  title: string;
+  reason: string;
+  subject: string;
+  topic: string;
+  targetQuestions: number;
+  reviewCount: number;
+  estimatedMinutes: number;
+  focusMode: 'revisao' | 'questoes' | 'misto';
+  priority: StudyRecommendationPriority;
 }
 
 export interface StudySummary {
@@ -269,6 +303,8 @@ export interface StudySummary {
   simulatedExams: number;
   weeklyGoal: number;
   lastAttemptAt?: string;
+  weakSubjects: string[];
+  dueReviews: number;
 }
 
 export interface StudyEssayPrompt {
@@ -289,6 +325,18 @@ export interface StudyEssayEntry {
   topic: string;
   answer: string;
   createdAt: string;
+  updatedAt?: string;
+  wordCount: number;
+  score?: number;
+  status: 'draft' | 'finished';
+  feedback?: string[];
+}
+
+export interface StudyEssayDraft {
+  promptId: string;
+  answer: string;
+  updatedAt: string;
+  wordCount: number;
 }
 
 export interface StudyDashboardData {
@@ -297,4 +345,7 @@ export interface StudyDashboardData {
   summary: StudySummary;
   subjectProgress: StudySubjectProgress[];
   errorInsights: StudyErrorInsight[];
+  topicPerformance: StudyTopicPerformance[];
+  reviewQueue: StudyReviewItem[];
+  recommendation: StudyRecommendation;
 }

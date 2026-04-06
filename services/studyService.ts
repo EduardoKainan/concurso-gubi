@@ -8,12 +8,16 @@ import {
 import {
   StudyAttempt,
   StudyDashboardData,
+  StudyEssayDraft,
   StudyEssayEntry,
   StudyEssayPrompt,
   StudyErrorInsight,
   StudyQuestionItem,
+  StudyRecommendation,
+  StudyReviewItem,
   StudySubjectProgress,
   StudySummary,
+  StudyTopicPerformance,
 } from '../types';
 
 const ATTEMPTS_TABLE = 'study_attempts';
@@ -22,9 +26,17 @@ const SUBJECTS_TABLE = 'study_subjects';
 const TOPICS_TABLE = 'study_topics';
 const QUESTIONS_TABLE = 'study_questions';
 const ESSAYS_TABLE = 'study_essay_entries';
-const STORAGE_KEY = 'adroi.study.v2';
-const ESSAY_STORAGE_KEY = 'adroi.study.essays.v1';
+const ESSAY_DRAFTS_TABLE = 'study_essay_drafts';
+const STORAGE_KEY = 'adroi.study.v3';
+const ESSAY_STORAGE_KEY = 'adroi.study.essays.v2';
+const ESSAY_DRAFT_STORAGE_KEY = 'adroi.study.essayDraft.v1';
 const SUMMARY_ID = 'public-demo';
+
+const REVIEW_INTERVALS: Record<'24h' | '7d' | '14d', number> = {
+  '24h': 24 * 60 * 60 * 1000,
+  '7d': 7 * 24 * 60 * 60 * 1000,
+  '14d': 14 * 24 * 60 * 60 * 1000,
+};
 
 const getClientSessionId = (): string => {
   if (typeof window === 'undefined') return SUMMARY_ID;
@@ -42,52 +54,59 @@ const isAuthSessionMissingError = (error: unknown): boolean => {
   return message.toLowerCase().includes('auth session missing');
 };
 
-const seedProgress: StudySubjectProgress[] = studySubjectProgressSeed;
-const seedSummary: StudySummary = studySummarySeed;
+const seedProgress: StudySubjectProgress[] = studySubjectProgressSeed.map((item) => ({
+  ...item,
+  correct: 0,
+  wrong: 0,
+  totalQuestions: 0,
+  lastAttemptAt: undefined,
+  studyMomentum: 50,
+}));
 
-const calculateErrorInsights = (attempts: StudyAttempt[]): StudyErrorInsight[] => {
-  const byTopic = new Map<string, StudyAttempt[]>();
-
-  attempts.forEach((attempt) => {
-    const key = `${attempt.subject}::${attempt.topic}`;
-    const list = byTopic.get(key) || [];
-    list.push(attempt);
-    byTopic.set(key, list);
-  });
-
-  return Array.from(byTopic.entries())
-    .map(([key, topicAttempts]) => {
-      const [subject, topic] = key.split('::');
-      const totalAttempts = topicAttempts.length;
-      const totalErrors = topicAttempts.filter((item) => !item.is_correct).length;
-      const correct = totalAttempts - totalErrors;
-      const accuracy = totalAttempts > 0 ? Math.round((correct / totalAttempts) * 100) : 0;
-
-      return {
-        subject,
-        topic,
-        totalAttempts,
-        totalErrors,
-        accuracy,
-        lastAttemptAt: topicAttempts[0]?.attempted_at,
-      };
-    })
-    .filter((item) => item.totalErrors > 0)
-    .sort((a, b) => {
-      if (b.totalErrors !== a.totalErrors) return b.totalErrors - a.totalErrors;
-      return a.accuracy - b.accuracy;
-    })
-    .slice(0, 8);
+const seedSummary: StudySummary = {
+  ...studySummarySeed,
+  weakSubjects: [],
+  dueReviews: 0,
 };
 
 const getStoredData = (): StudyDashboardData => {
+  const emptyRecommendation: StudyRecommendation = {
+    title: 'Comece por um bloco curto de revisão',
+    reason: 'Ainda não há histórico suficiente. Faça 10 questões para o motor adaptativo aprender.',
+    subject: seedProgress[0]?.subject || 'Geral',
+    topic: 'Mapear baseline',
+    targetQuestions: 10,
+    reviewCount: 0,
+    estimatedMinutes: 30,
+    focusMode: 'questoes',
+    priority: 'media',
+  };
+
   if (typeof window === 'undefined') {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
+    return {
+      source: 'local',
+      attempts: [],
+      summary: seedSummary,
+      subjectProgress: seedProgress,
+      errorInsights: [],
+      topicPerformance: [],
+      reviewQueue: [],
+      recommendation: emptyRecommendation,
+    };
   }
 
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (!raw) {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
+    return {
+      source: 'local',
+      attempts: [],
+      summary: seedSummary,
+      subjectProgress: seedProgress,
+      errorInsights: [],
+      topicPerformance: [],
+      reviewQueue: [],
+      recommendation: emptyRecommendation,
+    };
   }
 
   try {
@@ -97,10 +116,22 @@ const getStoredData = (): StudyDashboardData => {
       attempts: parsed.attempts || [],
       summary: parsed.summary || seedSummary,
       subjectProgress: parsed.subjectProgress || seedProgress,
-      errorInsights: parsed.errorInsights || calculateErrorInsights(parsed.attempts || []),
+      errorInsights: parsed.errorInsights || [],
+      topicPerformance: parsed.topicPerformance || [],
+      reviewQueue: parsed.reviewQueue || [],
+      recommendation: parsed.recommendation || emptyRecommendation,
     };
   } catch {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
+    return {
+      source: 'local',
+      attempts: [],
+      summary: seedSummary,
+      subjectProgress: seedProgress,
+      errorInsights: [],
+      topicPerformance: [],
+      reviewQueue: [],
+      recommendation: emptyRecommendation,
+    };
   }
 };
 
@@ -109,67 +140,42 @@ const persistLocal = (data: Omit<StudyDashboardData, 'source'>) => {
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
 };
 
-const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+const getStoredEssays = (): StudyEssayEntry[] => {
+  if (typeof window === 'undefined') return [];
+  const raw = window.localStorage.getItem(ESSAY_STORAGE_KEY);
+  if (!raw) return [];
 
-const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuestionItem[]): Omit<StudyDashboardData, 'source'> => {
-  const bySubject = new Map<string, StudyAttempt[]>();
-  const questionsBySubject = new Map<string, number>();
+  try {
+    return JSON.parse(raw) as StudyEssayEntry[];
+  } catch {
+    return [];
+  }
+};
 
-  questions.forEach((question) => {
-    questionsBySubject.set(question.subject, (questionsBySubject.get(question.subject) || 0) + 1);
-  });
+const persistEssaysLocal = (entries: StudyEssayEntry[]) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ESSAY_STORAGE_KEY, JSON.stringify(entries));
+};
 
-  attempts.forEach((attempt) => {
-    const list = bySubject.get(attempt.subject) || [];
-    list.push(attempt);
-    bySubject.set(attempt.subject, list);
-  });
+const getStoredEssayDraft = (): StudyEssayDraft | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(ESSAY_DRAFT_STORAGE_KEY);
+  if (!raw) return null;
 
-  const subjectProgress = seedProgress.map((seed) => {
-    const subjectAttempts = bySubject.get(seed.subject) || [];
-    if (subjectAttempts.length === 0) return seed;
+  try {
+    return JSON.parse(raw) as StudyEssayDraft;
+  } catch {
+    return null;
+  }
+};
 
-    const correct = subjectAttempts.filter((item) => item.is_correct).length;
-    const accuracy = Math.round((correct / subjectAttempts.length) * 100);
-    const uniqueQuestions = new Set(subjectAttempts.map((item) => item.question_id)).size;
-    const totalQuestions = questionsBySubject.get(seed.subject) || 1;
-    const progress = Math.min(100, Math.max(seed.progress, Math.round((uniqueQuestions / totalQuestions) * 100)));
-    const pendingReviews = Math.max(0, seed.pendingReviews + subjectAttempts.filter((item) => !item.is_correct).length - correct);
-    const uniqueDays = Array.from(new Set(subjectAttempts.map((item) => new Date(item.attempted_at).toDateString()))).length;
-
-    return {
-      ...seed,
-      attempts: seed.attempts + subjectAttempts.length,
-      accuracy,
-      progress,
-      pendingReviews,
-      streak: Math.max(seed.streak, uniqueDays),
-    };
-  });
-
-  const totalAttempts = seedSummary.totalAttempts + attempts.length;
-  const totalCorrect = seedSummary.totalCorrect + attempts.filter((item) => item.is_correct).length;
-  const accuracy = totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : seedSummary.accuracy;
-  const now = new Date();
-  const completedToday = attempts.filter((item) => isSameDay(new Date(item.attempted_at), now)).length;
-  const pendingReviews = subjectProgress.reduce((sum, item) => sum + item.pendingReviews, 0);
-  const lastAttemptAt = attempts[0]?.attempted_at;
-
-  return {
-    attempts,
-    subjectProgress,
-    errorInsights: calculateErrorInsights(attempts),
-    summary: {
-      ...seedSummary,
-      totalAttempts,
-      totalCorrect,
-      accuracy,
-      pendingReviews,
-      completedToday: seedSummary.completedToday + completedToday,
-      currentStreak: Math.max(seedSummary.currentStreak, subjectProgress.reduce((max, item) => Math.max(max, item.streak), 0)),
-      lastAttemptAt,
-    },
-  };
+const persistEssayDraftLocal = (draft: StudyEssayDraft | null) => {
+  if (typeof window === 'undefined') return;
+  if (!draft) {
+    window.localStorage.removeItem(ESSAY_DRAFT_STORAGE_KEY);
+    return;
+  }
+  window.localStorage.setItem(ESSAY_DRAFT_STORAGE_KEY, JSON.stringify(draft));
 };
 
 const getAttemptedAt = (row: any): string => row.attempted_at || row.answered_at || row.created_at || new Date().toISOString();
@@ -195,31 +201,305 @@ const toAttempt = (row: any): StudyAttempt => ({
   attempted_at: getAttemptedAt(row),
 });
 
-const getStoredEssays = (): StudyEssayEntry[] => {
-  if (typeof window === 'undefined') return [];
-  const raw = window.localStorage.getItem(ESSAY_STORAGE_KEY);
-  if (!raw) return [];
+const toEssayEntry = (row: any): StudyEssayEntry => {
+  const answer = row.answer || '';
+  const wordCount = Number(row.word_count) || answer.trim().split(/\s+/).filter(Boolean).length;
+  return {
+    id: String(row.id),
+    promptId: String(row.prompt_id),
+    title: row.title,
+    subject: row.subject,
+    topic: row.topic,
+    answer,
+    createdAt: row.created_at || new Date().toISOString(),
+    updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+    wordCount,
+    score: typeof row.score === 'number' ? row.score : undefined,
+    status: row.status === 'draft' ? 'draft' : 'finished',
+    feedback: Array.isArray(row.feedback) ? row.feedback : undefined,
+  };
+};
 
-  try {
-    return JSON.parse(raw) as StudyEssayEntry[];
-  } catch {
-    return [];
+const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
+
+const getReviewStage = (errorCount: number): '24h' | '7d' | '14d' => {
+  if (errorCount <= 1) return '24h';
+  if (errorCount === 2) return '7d';
+  return '14d';
+};
+
+const calcWordCount = (text: string) => text.trim().split(/\s+/).filter(Boolean).length;
+
+const buildEssayFeedback = (answer: string, prompt: StudyEssayPrompt | undefined): string[] => {
+  const wordCount = calcWordCount(answer);
+  const paragraphs = answer.split(/\n\s*\n/).filter((item) => item.trim().length > 0).length;
+  const feedback: string[] = [];
+
+  if (wordCount < 120) feedback.push('Texto curto. Tente passar de 120 palavras para sustentar melhor a argumentação.');
+  else if (wordCount > 260) feedback.push('Texto robusto. Vale revisar concisão para não perder objetividade de prova.');
+
+  if (paragraphs < 3) feedback.push('Estruture em pelo menos 3 parágrafos: introdução, desenvolvimento e conclusão.');
+  else feedback.push('Estrutura base atendida, com boa separação visual de ideias.');
+
+  if (prompt && prompt.structure.some((item) => answer.toLowerCase().includes(item.split(' ')[0].toLowerCase()))) {
+    feedback.push('Você já acionou parte da estrutura sugerida pelo mentor.');
+  } else if (prompt) {
+    feedback.push(`Cheque se contemplou: ${prompt.structure.slice(0, 2).join(' + ')}.`);
   }
+
+  return feedback.slice(0, 3);
 };
 
-const persistEssaysLocal = (entries: StudyEssayEntry[]) => {
-  if (typeof window === 'undefined') return;
-  window.localStorage.setItem(ESSAY_STORAGE_KEY, JSON.stringify(entries));
+const calculateErrorInsights = (attempts: StudyAttempt[]): StudyErrorInsight[] => {
+  const byTopic = new Map<string, StudyAttempt[]>();
+
+  attempts.forEach((attempt) => {
+    const key = `${attempt.subject}::${attempt.topic}`;
+    const list = byTopic.get(key) || [];
+    list.push(attempt);
+    byTopic.set(key, list);
+  });
+
+  return Array.from(byTopic.entries())
+    .map(([key, topicAttempts]) => {
+      const [subject, topic] = key.split('::');
+      const ordered = [...topicAttempts].sort((a, b) => +new Date(b.attempted_at) - +new Date(a.attempted_at));
+      const totalAttempts = ordered.length;
+      const totalErrors = ordered.filter((item) => !item.is_correct).length;
+      const correct = totalAttempts - totalErrors;
+      const accuracy = totalAttempts > 0 ? Math.round((correct / totalAttempts) * 100) : 0;
+
+      return {
+        subject,
+        topic,
+        totalAttempts,
+        totalErrors,
+        accuracy,
+        lastAttemptAt: ordered[0]?.attempted_at,
+      };
+    })
+    .filter((item) => item.totalErrors > 0)
+    .sort((a, b) => {
+      if (b.totalErrors !== a.totalErrors) return b.totalErrors - a.totalErrors;
+      return a.accuracy - b.accuracy;
+    })
+    .slice(0, 10);
 };
 
-const toEssayEntry = (row: any): StudyEssayEntry => ({
-  id: String(row.id),
-  promptId: String(row.prompt_id),
-  title: row.title,
-  subject: row.subject,
-  topic: row.topic,
-  answer: row.answer,
-  createdAt: row.created_at || new Date().toISOString(),
+const calculateTopicPerformance = (attempts: StudyAttempt[]): StudyTopicPerformance[] => {
+  const byTopic = new Map<string, StudyAttempt[]>();
+
+  attempts.forEach((attempt) => {
+    const key = `${attempt.subject}::${attempt.topic}`;
+    const list = byTopic.get(key) || [];
+    list.push(attempt);
+    byTopic.set(key, list);
+  });
+
+  return Array.from(byTopic.entries())
+    .map(([key, topicAttempts]) => {
+      const [subject, topic] = key.split('::');
+      const ordered = [...topicAttempts].sort((a, b) => +new Date(b.attempted_at) - +new Date(a.attempted_at));
+      const attemptsCount = ordered.length;
+      const correct = ordered.filter((item) => item.is_correct).length;
+      const errors = attemptsCount - correct;
+      const accuracy = attemptsCount > 0 ? Math.round((correct / attemptsCount) * 100) : 0;
+      const averageResponseLabel = accuracy >= 75 ? 'forte' : accuracy >= 50 ? 'atenção' : 'crítico';
+
+      return {
+        subject,
+        topic,
+        attempts: attemptsCount,
+        correct,
+        errors,
+        accuracy,
+        averageResponseLabel,
+        lastAttemptAt: ordered[0]?.attempted_at,
+      };
+    })
+    .sort((a, b) => {
+      if (a.averageResponseLabel !== b.averageResponseLabel) {
+        const order = { crítico: 0, atenção: 1, forte: 2 };
+        return order[a.averageResponseLabel] - order[b.averageResponseLabel];
+      }
+      return a.accuracy - b.accuracy;
+    });
+};
+
+const calculateReviewQueue = (attempts: StudyAttempt[]): StudyReviewItem[] => {
+  const wrongAttempts = attempts.filter((item) => !item.is_correct);
+  const byQuestion = new Map<number, StudyAttempt[]>();
+
+  wrongAttempts.forEach((attempt) => {
+    const list = byQuestion.get(attempt.question_id) || [];
+    list.push(attempt);
+    byQuestion.set(attempt.question_id, list);
+  });
+
+  const now = Date.now();
+
+  return Array.from(byQuestion.entries())
+    .map(([questionId, entries]) => {
+      const ordered = [...entries].sort((a, b) => +new Date(b.attempted_at) - +new Date(a.attempted_at));
+      const lastAttempt = ordered[0];
+      const errorCount = ordered.length;
+      const stage = getReviewStage(errorCount);
+      const dueAtDate = new Date(new Date(lastAttempt.attempted_at).getTime() + REVIEW_INTERVALS[stage]);
+      const diff = dueAtDate.getTime() - now;
+      const status = diff <= 0 ? 'overdue' : diff <= 18 * 60 * 60 * 1000 ? 'due_soon' : 'scheduled';
+
+      return {
+        id: `${questionId}-${stage}`,
+        questionId,
+        subject: lastAttempt.subject,
+        topic: lastAttempt.topic,
+        stage,
+        dueAt: dueAtDate.toISOString(),
+        errorCount,
+        lastAttemptAt: lastAttempt.attempted_at,
+        status,
+      };
+    })
+    .sort((a, b) => +new Date(a.dueAt) - +new Date(b.dueAt))
+    .slice(0, 18);
+};
+
+const calculateRecommendation = (
+  subjectProgress: StudySubjectProgress[],
+  topicPerformance: StudyTopicPerformance[],
+  reviewQueue: StudyReviewItem[]
+): StudyRecommendation => {
+  const dueReviews = reviewQueue.filter((item) => item.status !== 'scheduled');
+  const weakestSubject = [...subjectProgress].sort((a, b) => a.accuracy - b.accuracy)[0];
+  const weakestTopic = topicPerformance.find((item) => item.subject === weakestSubject?.subject) || topicPerformance[0];
+
+  if (!weakestSubject) {
+    return {
+      title: 'Monte o baseline inicial',
+      reason: 'Ainda não existe massa crítica de respostas. Resolva um bloco para calibrar a trilha adaptativa.',
+      subject: 'Geral',
+      topic: 'Diagnóstico inicial',
+      targetQuestions: 10,
+      reviewCount: 0,
+      estimatedMinutes: 30,
+      focusMode: 'questoes',
+      priority: 'media',
+    };
+  }
+
+  const focusMode = dueReviews.length >= 3 ? 'misto' : dueReviews.length > 0 ? 'revisao' : 'questoes';
+  const targetQuestions = Math.max(8, Math.min(20, 6 + weakestSubject.pendingReviews + Math.round((100 - weakestSubject.accuracy) / 10)));
+  const estimatedMinutes = focusMode === 'revisao' ? 35 : focusMode === 'misto' ? 50 : 45;
+
+  return {
+    title: dueReviews.length > 0 ? 'Próxima sessão recomendada: revisão + ataque ao ponto fraco' : 'Próxima sessão recomendada: bloco de recuperação',
+    reason: dueReviews.length > 0
+      ? `${dueReviews.length} revisão(ões) já venceram ou vencem em breve, com fragilidade maior em ${weakestSubject.subject}.`
+      : `${weakestSubject.subject} é hoje a disciplina mais fraca, puxada por ${weakestTopic?.topic || 'tópicos recentes'}.`, 
+    subject: weakestSubject.subject,
+    topic: weakestTopic?.topic || 'Reforço dirigido',
+    targetQuestions,
+    reviewCount: dueReviews.length,
+    estimatedMinutes,
+    focusMode,
+    priority: weakestSubject.accuracy < 55 || dueReviews.length >= 4 ? 'alta' : weakestSubject.accuracy < 70 ? 'media' : 'baixa',
+  };
+};
+
+const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuestionItem[]): Omit<StudyDashboardData, 'source'> => {
+  const orderedAttempts = [...attempts].sort((a, b) => +new Date(b.attempted_at) - +new Date(a.attempted_at));
+  const bySubject = new Map<string, StudyAttempt[]>();
+  const questionsBySubject = new Map<string, number>();
+
+  questions.forEach((question) => {
+    questionsBySubject.set(question.subject, (questionsBySubject.get(question.subject) || 0) + 1);
+  });
+
+  orderedAttempts.forEach((attempt) => {
+    const list = bySubject.get(attempt.subject) || [];
+    list.push(attempt);
+    bySubject.set(attempt.subject, list);
+  });
+
+  const reviewQueue = calculateReviewQueue(orderedAttempts);
+  const topicPerformance = calculateTopicPerformance(orderedAttempts);
+
+  const subjectProgress = seedProgress.map((seed) => {
+    const subjectAttempts = bySubject.get(seed.subject) || [];
+    const ordered = [...subjectAttempts].sort((a, b) => +new Date(b.attempted_at) - +new Date(a.attempted_at));
+    const correct = ordered.filter((item) => item.is_correct).length;
+    const wrong = ordered.length - correct;
+    const accuracy = ordered.length > 0 ? Math.round((correct / ordered.length) * 100) : seed.accuracy;
+    const uniqueQuestions = new Set(ordered.map((item) => item.question_id)).size;
+    const totalQuestions = questionsBySubject.get(seed.subject) || 1;
+    const progress = ordered.length > 0 ? Math.min(100, Math.max(seed.progress, Math.round((uniqueQuestions / totalQuestions) * 100))) : seed.progress;
+    const pendingReviews = reviewQueue.filter((item) => item.subject === seed.subject).length;
+    const uniqueDays = new Set(ordered.map((item) => new Date(item.attempted_at).toDateString())).size;
+    const lastAttemptAt = ordered[0]?.attempted_at;
+    const studyMomentum = ordered.length === 0 ? seed.studyMomentum : Math.max(20, Math.min(98, Math.round((accuracy * 0.6) + (progress * 0.4))));
+
+    return {
+      ...seed,
+      attempts: ordered.length,
+      accuracy,
+      progress,
+      pendingReviews,
+      streak: Math.max(seed.streak, uniqueDays),
+      correct,
+      wrong,
+      totalQuestions,
+      lastAttemptAt,
+      studyMomentum,
+    };
+  });
+
+  const totalAttempts = orderedAttempts.length;
+  const totalCorrect = orderedAttempts.filter((item) => item.is_correct).length;
+  const accuracy = totalAttempts > 0 ? Math.round((totalCorrect / totalAttempts) * 100) : seedSummary.accuracy;
+  const now = new Date();
+  const completedToday = orderedAttempts.filter((item) => isSameDay(new Date(item.attempted_at), now)).length;
+  const weakSubjects = [...subjectProgress]
+    .filter((item) => item.attempts > 0)
+    .sort((a, b) => a.accuracy - b.accuracy)
+    .slice(0, 3)
+    .map((item) => item.subject);
+  const recommendation = calculateRecommendation(subjectProgress, topicPerformance, reviewQueue);
+
+  return {
+    attempts: orderedAttempts,
+    subjectProgress,
+    errorInsights: calculateErrorInsights(orderedAttempts),
+    topicPerformance,
+    reviewQueue,
+    recommendation,
+    summary: {
+      ...seedSummary,
+      totalAttempts,
+      totalCorrect,
+      accuracy,
+      pendingReviews: reviewQueue.length,
+      completedToday,
+      currentStreak: Math.max(seedSummary.currentStreak, subjectProgress.reduce((max, item) => Math.max(max, item.streak), 0)),
+      lastAttemptAt: orderedAttempts[0]?.attempted_at,
+      weakSubjects,
+      dueReviews: reviewQueue.filter((item) => item.status !== 'scheduled').length,
+    },
+  };
+};
+
+const mergeSummaryData = (calculated: Omit<StudyDashboardData, 'source'>, summaryData: any) => ({
+  ...calculated,
+  summary: {
+    ...calculated.summary,
+    totalAttempts: summaryData?.total_attempts ?? calculated.summary.totalAttempts,
+    totalCorrect: summaryData?.total_correct ?? calculated.summary.totalCorrect,
+    accuracy: summaryData?.accuracy ?? calculated.summary.accuracy,
+    pendingReviews: summaryData?.pending_reviews ?? calculated.summary.pendingReviews,
+    completedToday: summaryData?.completed_today ?? summaryData?.questions_answered_today ?? calculated.summary.completedToday,
+    currentStreak: summaryData?.current_streak ?? summaryData?.streak_days ?? calculated.summary.currentStreak,
+    lastAttemptAt: summaryData?.last_attempt_at ?? calculated.summary.lastAttemptAt,
+    dueReviews: summaryData?.due_reviews ?? calculated.summary.dueReviews,
+  },
 });
 
 export const studyService = {
@@ -252,7 +532,7 @@ export const studyService = {
     try {
       const sessionId = getClientSessionId();
       const [{ data: attemptsData, error: attemptsError }, { data: summaryData, error: summaryError }] = await Promise.all([
-        supabase.from(ATTEMPTS_TABLE).select('*').eq('session_id', sessionId).order('answered_at', { ascending: false }).limit(200),
+        supabase.from(ATTEMPTS_TABLE).select('*').eq('session_id', sessionId).order('answered_at', { ascending: false }).limit(300),
         supabase.from(SUMMARY_TABLE).select('*').eq('session_id', sessionId).maybeSingle(),
       ]);
 
@@ -261,23 +541,7 @@ export const studyService = {
 
       const attempts = (attemptsData || []).map(toAttempt);
       const calculated = calculateDashboardData(attempts, questions);
-
-      const merged = summaryData
-        ? {
-            ...calculated,
-            summary: {
-              ...calculated.summary,
-              totalAttempts: summaryData.total_attempts ?? calculated.summary.totalAttempts,
-              totalCorrect: summaryData.total_correct ?? calculated.summary.totalCorrect,
-              accuracy: summaryData.accuracy ?? calculated.summary.accuracy,
-              pendingReviews: summaryData.pending_reviews ?? calculated.summary.pendingReviews,
-              completedToday: summaryData.completed_today ?? summaryData.questions_answered_today ?? calculated.summary.completedToday,
-              currentStreak: summaryData.current_streak ?? summaryData.streak_days ?? calculated.summary.currentStreak,
-              lastAttemptAt: summaryData.last_attempt_at ?? calculated.summary.lastAttemptAt,
-            },
-          }
-        : calculated;
-
+      const merged = mergeSummaryData(calculated, summaryData);
       persistLocal(merged);
       return { source: 'supabase', ...merged };
     } catch (error) {
@@ -303,41 +567,44 @@ export const studyService = {
     persistLocal(nextData);
 
     try {
+      const sessionId = getClientSessionId();
       const { error } = await supabase.from(ATTEMPTS_TABLE).insert([
         {
           id: attempt.id,
-          session_id: getClientSessionId(),
+          session_id: sessionId,
           question_id: attempt.question_id,
           subject: attempt.subject,
           topic: attempt.topic,
           selected_option: attempt.selected_option,
           is_correct: attempt.is_correct,
           answered_at: attempt.attempted_at,
+          attempted_at: attempt.attempted_at,
         },
       ]);
       if (error) throw error;
 
       const { error: summaryUpsertError } = await supabase.from(SUMMARY_TABLE).upsert(
-        [
-          {
-            id: getClientSessionId(),
-            session_id: getClientSessionId(),
-            total_attempts: nextData.summary.totalAttempts,
-            total_correct: nextData.summary.totalCorrect,
-            accuracy: nextData.summary.accuracy,
-            pending_reviews: nextData.summary.pendingReviews,
-            questions_answered_today: nextData.summary.completedToday,
-            streak_days: nextData.summary.currentStreak,
-            last_attempt_at: nextData.summary.lastAttemptAt,
-            updated_at: new Date().toISOString(),
-          },
-        ],
+        [{
+          id: sessionId,
+          session_id: sessionId,
+          total_attempts: nextData.summary.totalAttempts,
+          total_correct: nextData.summary.totalCorrect,
+          accuracy: nextData.summary.accuracy,
+          pending_reviews: nextData.summary.pendingReviews,
+          due_reviews: nextData.summary.dueReviews,
+          questions_answered_today: nextData.summary.completedToday,
+          completed_today: nextData.summary.completedToday,
+          streak_days: nextData.summary.currentStreak,
+          current_streak: nextData.summary.currentStreak,
+          weak_subjects: nextData.summary.weakSubjects,
+          last_attempt_at: nextData.summary.lastAttemptAt,
+          updated_at: new Date().toISOString(),
+        }],
         { onConflict: 'session_id' }
       );
 
       if (summaryUpsertError) throw summaryUpsertError;
 
-      persistLocal(nextData);
       return { source: 'supabase', ...nextData };
     } catch (error) {
       if (isAuthSessionMissingError(error)) {
@@ -351,6 +618,44 @@ export const studyService = {
 
   getEssayPrompts(): StudyEssayPrompt[] {
     return studyEssayPrompts;
+  },
+
+  getEssayDraft(): StudyEssayDraft | null {
+    return getStoredEssayDraft();
+  },
+
+  async saveEssayDraft(promptId: string, answer: string): Promise<StudyEssayDraft | null> {
+    const trimmed = answer.trim();
+    if (!trimmed) {
+      persistEssayDraftLocal(null);
+      return null;
+    }
+
+    const draft: StudyEssayDraft = {
+      promptId,
+      answer,
+      updatedAt: new Date().toISOString(),
+      wordCount: calcWordCount(answer),
+    };
+
+    persistEssayDraftLocal(draft);
+
+    try {
+      const { error } = await supabase.from(ESSAY_DRAFTS_TABLE).upsert([
+        {
+          session_id: getClientSessionId(),
+          prompt_id: draft.promptId,
+          answer: draft.answer,
+          word_count: draft.wordCount,
+          updated_at: draft.updatedAt,
+        },
+      ], { onConflict: 'session_id' });
+      if (error) throw error;
+    } catch (error) {
+      console.info('Rascunho de discursiva mantido localmente.', error);
+    }
+
+    return draft;
   },
 
   async getEssayHistory(): Promise<StudyEssayEntry[]> {
@@ -374,15 +679,20 @@ export const studyService = {
     }
   },
 
-  async saveEssayEntry(input: Omit<StudyEssayEntry, 'id' | 'createdAt'>): Promise<StudyEssayEntry[]> {
+  async saveEssayEntry(input: Omit<StudyEssayEntry, 'id' | 'createdAt' | 'updatedAt' | 'wordCount' | 'feedback'>): Promise<StudyEssayEntry[]> {
+    const prompt = studyEssayPrompts.find((item) => item.id === input.promptId);
     const entry: StudyEssayEntry = {
       ...input,
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
       createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      wordCount: calcWordCount(input.answer),
+      feedback: buildEssayFeedback(input.answer, prompt),
     };
 
     const localEntries = [entry, ...getStoredEssays()];
     persistEssaysLocal(localEntries);
+    persistEssayDraftLocal(null);
 
     try {
       const { error } = await supabase.from(ESSAYS_TABLE).insert([
@@ -394,7 +704,11 @@ export const studyService = {
           subject: entry.subject,
           topic: entry.topic,
           answer: entry.answer,
+          word_count: entry.wordCount,
+          status: entry.status,
+          feedback: entry.feedback,
           created_at: entry.createdAt,
+          updated_at: entry.updatedAt,
         },
       ]);
 
