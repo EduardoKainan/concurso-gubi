@@ -317,6 +317,24 @@ export interface StudyEssayPrompt {
   evaluationCriteria: string[];
 }
 
+export interface StudyEssayDidacticStep {
+  title: string;
+  explanation: string;
+  bullets: string[];
+}
+
+export interface StudyEssayDidacticResponse {
+  provider: 'gemini' | 'local';
+  generatedAt: string;
+  interpretation: string;
+  thesis: string;
+  arguments: string[];
+  suggestedStructure: string[];
+  modelAnswer: string;
+  studyTips: string[];
+  steps: StudyEssayDidacticStep[];
+}
+
 export interface StudyEssayEntry {
   id: string;
   promptId: string;
@@ -330,6 +348,7 @@ export interface StudyEssayEntry {
   score?: number;
   status: 'draft' | 'finished';
   feedback?: string[];
+  didacticResponse?: StudyEssayDidacticResponse;
 }
 
 export interface StudyEssayDraft {

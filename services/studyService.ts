@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { studyEssayCoachService } from './studyEssayCoachService';
 import {
   studyEssayPrompts,
   studyQuestions as studyQuestionsSeed,
@@ -9,6 +10,7 @@ import {
   StudyAttempt,
   StudyDashboardData,
   StudyEssayDraft,
+  StudyEssayDidacticResponse,
   StudyEssayEntry,
   StudyEssayPrompt,
   StudyErrorInsight,
@@ -217,6 +219,7 @@ const toEssayEntry = (row: any): StudyEssayEntry => {
     score: typeof row.score === 'number' ? row.score : undefined,
     status: row.status === 'draft' ? 'draft' : 'finished',
     feedback: Array.isArray(row.feedback) ? row.feedback : undefined,
+    didacticResponse: row.didactic_response || undefined,
   };
 };
 
@@ -707,6 +710,7 @@ export const studyService = {
           word_count: entry.wordCount,
           status: entry.status,
           feedback: entry.feedback,
+          didactic_response: entry.didacticResponse,
           created_at: entry.createdAt,
           updated_at: entry.updatedAt,
         },
@@ -718,5 +722,11 @@ export const studyService = {
       console.info('Supabase indisponível para discursiva, mantendo histórico local.', error);
       return localEntries;
     }
+  },
+
+  async generateDidacticEssay(promptId: string): Promise<StudyEssayDidacticResponse | null> {
+    const prompt = studyEssayPrompts.find((item) => item.id === promptId);
+    if (!prompt) return null;
+    return studyEssayCoachService.generateDidacticResponse(prompt);
   },
 };

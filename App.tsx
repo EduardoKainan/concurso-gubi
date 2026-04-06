@@ -20,6 +20,7 @@ import {
   RefreshCcw,
   Search,
   Signal,
+  Sparkles,
   Star,
   Target,
   TrendingUp,
@@ -29,7 +30,7 @@ import {
 } from 'lucide-react';
 import { analystPriorityTrail, studyPlan, studyQuestions as localQuestions } from './data/studySeed';
 import { studyService } from './services/studyService';
-import { StudyDashboardData, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyReviewItem, StudyViewKey } from './types';
+import { StudyDashboardData, StudyEssayDidacticResponse, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyReviewItem, StudyViewKey } from './types';
 
 const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<any> }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -56,9 +57,11 @@ const App: React.FC = () => {
   const [selectedPromptId, setSelectedPromptId] = useState('');
   const [essayDraft, setEssayDraft] = useState('');
   const [draftMeta, setDraftMeta] = useState<StudyEssayDraft | null>(null);
+  const [didacticResponse, setDidacticResponse] = useState<StudyEssayDidacticResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [savingEssay, setSavingEssay] = useState(false);
+  const [generatingDidactic, setGeneratingDidactic] = useState(false);
   const [subjectFilter, setSubjectFilter] = useState('Todas');
   const [levelFilter, setLevelFilter] = useState('Todas');
   const [searchTerm, setSearchTerm] = useState('');
@@ -136,6 +139,11 @@ const App: React.FC = () => {
     if (!selectedPrompt && essayPrompts[0]) setSelectedPromptId(essayPrompts[0].id);
   }, [selectedPrompt, essayPrompts]);
 
+  useEffect(() => {
+    const historyMatch = essayHistory.find((item) => item.promptId === selectedPromptId && item.didacticResponse);
+    setDidacticResponse(historyMatch?.didacticResponse || null);
+  }, [essayHistory, selectedPromptId]);
+
   const goToNextQuestion = () => {
     if (!selectedQuestion || !filteredQuestions.length) return;
     const currentIndex = filteredQuestions.findIndex((item) => item.id === selectedQuestion.id);
@@ -176,12 +184,56 @@ const App: React.FC = () => {
       topic: selectedPrompt.topic,
       answer: essayDraft.trim(),
       status: 'finished',
+      didacticResponse: didacticResponse || undefined,
     });
     setEssayHistory(history);
     setEssayDraft('');
     setDraftMeta(null);
     setSavingEssay(false);
   };
+
+  const generateDidacticEssay = async () => {
+    if (!selectedPrompt || generatingDidactic) return;
+    setGeneratingDidactic(true);
+    const generated = await studyService.generateDidacticEssay(selectedPrompt.id);
+    setDidacticResponse(generated);
+    setGeneratingDidactic(false);
+  };
+
+  const renderDidacticResponse = (response: StudyEssayDidacticResponse) => (
+    <div className="mt-5 space-y-4 rounded-3xl border border-cyan-400/20 bg-cyan-500/5 p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-sm font-medium text-cyan-200">Resposta-modelo explicada</p>
+          <p className="text-xs text-slate-400">Didática passo a passo para estudar, não para copiar. Fonte: {response.provider === 'gemini' ? 'IA' : 'fallback local'}.</p>
+        </div>
+        <span className="rounded-full border border-cyan-400/20 bg-cyan-400/10 px-3 py-1 text-xs text-cyan-100">{new Date(response.generatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</span>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2">
+        {response.steps.map((step) => (
+          <div key={step.title} className="rounded-2xl border border-white/10 bg-slate-950/50 p-4">
+            <h3 className="font-medium text-white">{step.title}</h3>
+            <p className="mt-2 text-sm leading-6 text-slate-300">{step.explanation}</p>
+            <ul className="mt-3 space-y-2 text-sm text-cyan-100">
+              {step.bullets.map((bullet) => <li key={bullet}>• {bullet}</li>)}
+            </ul>
+          </div>
+        ))}
+      </div>
+
+      <div className="rounded-2xl border border-white/10 bg-slate-950/60 p-4">
+        <h3 className="font-medium text-white">Resposta-modelo</h3>
+        <p className="mt-3 whitespace-pre-wrap text-sm leading-7 text-slate-200">{response.modelAnswer}</p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <MiniStat label="Tese" value="definida" />
+        <MiniStat label="Argumentos" value={`${response.arguments.length}`} />
+        <MiniStat label="Passos" value={`${response.steps.length}`} />
+      </div>
+    </div>
+  );
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -659,7 +711,7 @@ const App: React.FC = () => {
             <FileText className="text-cyan-300" />
             <div>
               <h1 className="text-2xl font-semibold text-white">Discursiva com autosave</h1>
-              <p className="text-sm text-slate-400">Prompt guiado, rascunho persistido e feedback rápido de estrutura.</p>
+              <p className="text-sm text-slate-400">Prompt guiado, rascunho persistido e resposta-modelo explicada para aprender a estrutura.</p>
             </div>
           </div>
           <div>
@@ -709,10 +761,20 @@ const App: React.FC = () => {
                 <button onClick={saveEssay} disabled={!essayDraft.trim() || savingEssay} className="rounded-2xl bg-cyan-500 px-5 py-3 font-medium text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60">
                   {savingEssay ? 'Salvando...' : 'Finalizar discursiva'}
                 </button>
+                <button onClick={generateDidacticEssay} disabled={generatingDidactic} className="inline-flex rounded-2xl border border-cyan-400/30 bg-cyan-500/10 px-5 py-3 font-medium text-cyan-100 transition hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-60">
+                  <Sparkles size={18} className="mr-2" />
+                  {generatingDidactic ? 'Gerando explicação...' : 'Gerar resposta didática com IA'}
+                </button>
                 <button onClick={() => { setEssayDraft(''); setDraftMeta(null); studyService.saveEssayDraft(selectedPromptId, ''); }} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
                   Limpar rascunho
                 </button>
               </div>
+
+              {didacticResponse ? renderDidacticResponse(didacticResponse) : (
+                <div className="mt-5 rounded-2xl border border-dashed border-cyan-400/20 bg-cyan-500/5 p-5 text-sm text-slate-300">
+                  Clique em <span className="font-medium text-cyan-200">Gerar resposta didática com IA</span> para ver interpretação do tema, tese, argumentos, estrutura sugerida e uma resposta-modelo explicada.
+                </div>
+              )}
             </>
           )}
         </div>
@@ -739,6 +801,15 @@ const App: React.FC = () => {
                 <ul className="mt-3 space-y-2 text-sm text-cyan-100">
                   {item.feedback.map((feedback) => <li key={feedback}>• {feedback}</li>)}
                 </ul>
+              ) : null}
+              {item.didacticResponse ? (
+                <div className="mt-4 rounded-2xl border border-cyan-400/15 bg-cyan-500/5 p-4">
+                  <p className="text-sm font-medium text-cyan-100">Resposta-modelo explicada salva</p>
+                  <ul className="mt-2 space-y-1 text-sm text-slate-300">
+                    <li>• Tese: {item.didacticResponse.thesis}</li>
+                    <li>• Argumentos: {item.didacticResponse.arguments.join(' | ')}</li>
+                  </ul>
+                </div>
               ) : null}
               <p className="mt-3 whitespace-pre-wrap text-sm text-slate-300 line-clamp-5">{item.answer}</p>
             </div>

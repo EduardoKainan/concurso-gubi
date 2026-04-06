@@ -18,6 +18,7 @@ create table if not exists public.study_essay_entries (
   status text not null default 'finished' check (status in ('draft', 'finished')),
   score integer,
   feedback jsonb,
+  didactic_response jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -27,6 +28,7 @@ alter table public.study_essay_entries
   add column if not exists status text not null default 'finished',
   add column if not exists score integer,
   add column if not exists feedback jsonb,
+  add column if not exists didactic_response jsonb,
   add column if not exists updated_at timestamptz not null default now();
 
 create table if not exists public.study_essay_drafts (
