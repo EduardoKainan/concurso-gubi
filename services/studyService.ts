@@ -131,6 +131,8 @@ const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuesti
   };
 };
 
+const getAttemptedAt = (row: any): string => row.attempted_at || row.answered_at || row.created_at || new Date().toISOString();
+
 const toAttempt = (row: any): StudyAttempt => ({
   id: String(row.id),
   question_id: Number(row.question_id),
@@ -138,7 +140,7 @@ const toAttempt = (row: any): StudyAttempt => ({
   topic: row.topic,
   selected_option: Number(row.selected_option),
   is_correct: Boolean(row.is_correct),
-  attempted_at: row.attempted_at,
+  attempted_at: getAttemptedAt(row),
 });
 
 export const studyService = {
@@ -148,7 +150,7 @@ export const studyService = {
     try {
       const sessionId = getClientSessionId();
       const [{ data: attemptsData, error: attemptsError }, { data: summaryData, error: summaryError }] = await Promise.all([
-        supabase.from(ATTEMPTS_TABLE).select('*').eq('session_id', sessionId).order('attempted_at', { ascending: false }).limit(200),
+        supabase.from(ATTEMPTS_TABLE).select('*').eq('session_id', sessionId).order('answered_at', { ascending: false }).limit(200),
         supabase.from(SUMMARY_TABLE).select('*').eq('session_id', sessionId).maybeSingle(),
       ]);
 
@@ -208,7 +210,7 @@ export const studyService = {
           topic: attempt.topic,
           selected_option: attempt.selected_option,
           is_correct: attempt.is_correct,
-          attempted_at: attempt.attempted_at,
+          answered_at: attempt.attempted_at,
         },
       ]);
       if (error) throw error;
