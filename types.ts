@@ -196,3 +196,64 @@ export interface Goal {
 }
 
 export type ViewState = 'DASHBOARD' | 'CLIENT_DETAIL' | 'SETTINGS' | 'TASKS' | 'HELP' | 'SUPER_ADMIN' | 'REPORTS';
+
+export type StudyViewKey = 'dashboard' | 'questoes' | 'plano' | 'evolucao';
+
+export type StudyQuestionLevel = 'Fácil' | 'Médio' | 'Difícil';
+
+export interface StudyQuestionItem {
+  id: number;
+  subject: string;
+  topic: string;
+  level: StudyQuestionLevel;
+  statement: string;
+  options: string[];
+  correctIndex: number;
+  explanation: string;
+}
+
+export interface StudyPlanDay {
+  day: string;
+  focus: string;
+  goal: string;
+  duration: string;
+  status: 'done' | 'today' | 'next';
+}
+
+export interface StudyAttempt {
+  id: string;
+  question_id: number;
+  subject: string;
+  topic: string;
+  selected_option: number;
+  is_correct: boolean;
+  attempted_at: string;
+}
+
+export interface StudySubjectProgress {
+  subject: string;
+  progress: number;
+  streak: number;
+  accuracy: number;
+  pendingReviews: number;
+  attempts: number;
+}
+
+export interface StudySummary {
+  totalAttempts: number;
+  totalCorrect: number;
+  accuracy: number;
+  currentStreak: number;
+  pendingReviews: number;
+  completedToday: number;
+  simulatedExams: number;
+  weeklyGoal: number;
+  lastAttemptAt?: string;
+}
+
+export interface StudyDashboardData {
+  source: 'supabase' | 'local';
+  attempts: StudyAttempt[];
+  summary: StudySummary;
+  subjectProgress: StudySubjectProgress[];
+}

@@ -1,0 +1,42 @@
+create extension if not exists pgcrypto;
+
+create table if not exists public.study_attempts (
+  id uuid primary key default gen_random_uuid(),
+  question_id integer not null,
+  subject text not null,
+  topic text not null,
+  selected_option integer not null,
+  is_correct boolean not null,
+  attempted_at timestamptz not null default now()
+);
+
+create table if not exists public.study_progress_summaries (
+  id text primary key,
+  total_attempts integer not null default 0,
+  total_correct integer not null default 0,
+  accuracy integer not null default 0,
+  pending_reviews integer not null default 0,
+  completed_today integer not null default 0,
+  current_streak integer not null default 0,
+  last_attempt_at timestamptz,
+  updated_at timestamptz not null default now()
+);
+
+alter table public.study_attempts enable row level security;
+alter table public.study_progress_summaries enable row level security;
+
+create policy if not exists "public read study attempts"
+  on public.study_attempts for select
+  using (true);
+
+create policy if not exists "public insert study attempts"
+  on public.study_attempts for insert
+  with check (true);
+
+create policy if not exists "public read study summaries"
+  on public.study_progress_summaries for select
+  using (true);
+
+create policy if not exists "public upsert study summaries"
+  on public.study_progress_summaries for insert
+  with check (true);

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Bell,
   BookOpen,
@@ -16,6 +16,8 @@ import {
   Medal,
   Menu,
   PlayCircle,
+  RefreshCcw,
+  Signal,
   Star,
   Target,
   TrendingUp,
@@ -23,44 +25,10 @@ import {
   User,
   X,
 } from 'lucide-react';
+import { StudyDashboardData, StudyPlanDay, StudyQuestionItem, StudyViewKey } from './types';
+import { studyService } from './services/studyService';
 
-type ViewKey = 'dashboard' | 'questoes' | 'plano' | 'evolucao';
-
-type SubjectProgress = {
-  subject: string;
-  progress: number;
-  streak: number;
-  accuracy: number;
-  pendingReviews: number;
-};
-
-type QuestionItem = {
-  id: number;
-  subject: string;
-  topic: string;
-  level: 'Fácil' | 'Médio' | 'Difícil';
-  statement: string;
-  options: string[];
-  correctIndex: number;
-  explanation: string;
-};
-
-type StudyPlanDay = {
-  day: string;
-  focus: string;
-  goal: string;
-  duration: string;
-  status: 'done' | 'today' | 'next';
-};
-
-const subjectProgress: SubjectProgress[] = [
-  { subject: 'Direito Constitucional', progress: 76, streak: 5, accuracy: 81, pendingReviews: 12 },
-  { subject: 'Direito Administrativo', progress: 64, streak: 4, accuracy: 74, pendingReviews: 18 },
-  { subject: 'Português', progress: 88, streak: 9, accuracy: 90, pendingReviews: 6 },
-  { subject: 'Raciocínio Lógico', progress: 52, streak: 3, accuracy: 69, pendingReviews: 20 },
-];
-
-const questions: QuestionItem[] = [
+const questions: StudyQuestionItem[] = [
   {
     id: 1,
     subject: 'Direito Constitucional',
@@ -116,7 +84,7 @@ const studyPlan: StudyPlanDay[] = [
   { day: 'Sexta', focus: 'Simulado direcionado', goal: '60 questões cronometradas', duration: '3h', status: 'next' },
 ];
 
-const navItems: { key: ViewKey; label: string; icon: React.ComponentType<any> }[] = [
+const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<any> }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { key: 'questoes', label: 'Questões', icon: FileQuestion },
   { key: 'plano', label: 'Plano de estudos', icon: BookOpen },
@@ -127,21 +95,55 @@ const appShell = 'min-h-screen bg-slate-950 text-slate-100';
 const panel = 'rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-2xl shadow-slate-950/30';
 
 const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<ViewKey>('dashboard');
+  const [currentView, setCurrentView] = useState<StudyViewKey>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
   const [selectedQuestion, setSelectedQuestion] = useState(questions[0]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [lastRecordedQuestionId, setLastRecordedQuestionId] = useState<number | null>(null);
+  const [dashboardData, setDashboardData] = useState<StudyDashboardData | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
 
-  const overallProgress = useMemo(
-    () => Math.round(subjectProgress.reduce((sum, item) => sum + item.progress, 0) / subjectProgress.length),
-    []
-  );
-  const averageAccuracy = useMemo(
-    () => Math.round(subjectProgress.reduce((sum, item) => sum + item.accuracy, 0) / subjectProgress.length),
-    []
-  );
-  const totalReviews = useMemo(() => subjectProgress.reduce((sum, item) => sum + item.pendingReviews, 0), []);
+  useEffect(() => {
+    const load = async () => {
+      setLoading(true);
+      const data = await studyService.getDashboardData(questions);
+      setDashboardData(data);
+      setLoading(false);
+    };
+
+    load();
+  }, []);
+
+  const overallProgress = useMemo(() => {
+    if (!dashboardData) return 0;
+    return Math.round(dashboardData.subjectProgress.reduce((sum, item) => sum + item.progress, 0) / dashboardData.subjectProgress.length);
+  }, [dashboardData]);
+
+  const averageAccuracy = dashboardData?.summary.accuracy ?? 0;
+  const totalReviews = dashboardData?.summary.pendingReviews ?? 0;
+
+  const saveAttempt = async () => {
+    if (selectedOption === null || showAnswer || saving) return;
+
+    setSaving(true);
+    const nextData = await studyService.recordAttempt(
+      {
+        question_id: selectedQuestion.id,
+        subject: selectedQuestion.subject,
+        topic: selectedQuestion.topic,
+        selected_option: selectedOption,
+        is_correct: selectedQuestion.correctIndex === selectedOption,
+      },
+      questions
+    );
+
+    setDashboardData(nextData);
+    setLastRecordedQuestionId(selectedQuestion.id);
+    setShowAnswer(true);
+    setSaving(false);
+  };
 
   const renderDashboard = () => (
     <div className="space-y-6">
@@ -149,13 +151,13 @@ const App: React.FC = () => {
         <div className="flex flex-col gap-6 lg:flex-row lg:items-center lg:justify-between">
           <div className="max-w-2xl space-y-4">
             <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-400/10 px-3 py-1 text-sm text-emerald-300">
-              <Flame size={16} /> Sequência de 9 dias
+              <Flame size={16} /> Sequência de {dashboardData?.summary.currentStreak ?? 0} dias
             </div>
             <div>
               <p className="text-sm uppercase tracking-[0.25em] text-slate-400">Mentor de Concurso</p>
-              <h1 className="mt-2 text-3xl font-semibold text-white lg:text-5xl">Seu cockpit de aprovação, focado no que mais cai na prova.</h1>
+              <h1 className="mt-2 text-3xl font-semibold text-white lg:text-5xl">Seu cockpit de aprovação, agora com progresso persistido.</h1>
             </div>
-            <p className="text-slate-300">Mock inicial do MVP com visão geral, rotina da semana, questões comentadas e acompanhamento de evolução.</p>
+            <p className="text-slate-300">Dados reais entram via Supabase quando as tabelas existem. Se não existirem, o app salva localmente sem quebrar a UI.</p>
             <div className="flex flex-wrap gap-3">
               <button onClick={() => setCurrentView('questoes')} className="inline-flex items-center gap-2 rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400">
                 <PlayCircle size={18} /> Resolver bloco de questões
@@ -166,10 +168,10 @@ const App: React.FC = () => {
             </div>
           </div>
           <div className="grid w-full gap-4 sm:grid-cols-2 lg:w-[420px]">
-            <MetricCard icon={Target} label="Progresso total" value={`${overallProgress}%`} detail="Meta de 80% até a prova" accent="from-indigo-500 to-cyan-400" />
-            <MetricCard icon={Brain} label="Precisão média" value={`${averageAccuracy}%`} detail="+6 pts nos últimos 14 dias" accent="from-fuchsia-500 to-pink-400" />
+            <MetricCard icon={Target} label="Progresso total" value={`${overallProgress}%`} detail="Calculado com base nas tentativas" accent="from-indigo-500 to-cyan-400" />
+            <MetricCard icon={Brain} label="Precisão média" value={`${averageAccuracy}%`} detail={`${dashboardData?.summary.totalCorrect ?? 0} acertos acumulados`} accent="from-fuchsia-500 to-pink-400" />
             <MetricCard icon={Clock3} label="Revisões pendentes" value={`${totalReviews}`} detail="Prioridade nas próximas 48h" accent="from-amber-500 to-orange-400" />
-            <MetricCard icon={Trophy} label="Simulados" value="12" detail="Melhor nota: 82/100" accent="from-emerald-500 to-lime-400" />
+            <MetricCard icon={Trophy} label="Simulados" value={`${dashboardData?.summary.simulatedExams ?? 0}`} detail={`${dashboardData?.summary.totalAttempts ?? 0} tentativas salvas`} accent="from-emerald-500 to-lime-400" />
           </div>
         </div>
       </section>
@@ -179,19 +181,19 @@ const App: React.FC = () => {
           <div className="mb-5 flex items-center justify-between">
             <div>
               <h2 className="text-xl font-semibold text-white">Disciplinas prioritárias</h2>
-              <p className="text-sm text-slate-400">Onde concentrar energia nesta semana</p>
+              <p className="text-sm text-slate-400">Mistura seed + desempenho salvo</p>
             </div>
             <button onClick={() => setCurrentView('evolucao')} className="inline-flex items-center gap-2 text-sm text-indigo-300 hover:text-indigo-200">
               Ver evolução <ChevronRight size={16} />
             </button>
           </div>
           <div className="space-y-4">
-            {subjectProgress.map((item) => (
+            {dashboardData?.subjectProgress.map((item) => (
               <div key={item.subject} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <div>
                     <h3 className="font-medium text-white">{item.subject}</h3>
-                    <p className="text-sm text-slate-400">Precisão {item.accuracy}% • {item.pendingReviews} revisões pendentes</p>
+                    <p className="text-sm text-slate-400">Precisão {item.accuracy}% • {item.pendingReviews} revisões pendentes • {item.attempts} tentativas</p>
                   </div>
                   <div className="flex items-center gap-3 text-sm text-slate-300">
                     <span className="rounded-full bg-white/5 px-3 py-1">🔥 {item.streak} dias</span>
@@ -224,9 +226,9 @@ const App: React.FC = () => {
           <div className={`${panel} p-6`}>
             <h2 className="font-semibold text-white">Radar do mentor</h2>
             <div className="mt-4 space-y-3 text-sm text-slate-300">
-              <InsightCard title="Ponto forte" description="Português já opera em faixa competitiva. Mantenha revisão curta, sem roubar tempo das matérias-meio." />
-              <InsightCard title="Gargalo atual" description="Raciocínio Lógico está com menor retenção. Vale trocar teoria longa por listas guiadas e correção ativa." />
-              <InsightCard title="Ajuste sugerido" description="Antecipar um mini simulado na quinta para medir transferência entre revisão e execução." />
+              <InsightCard title="Persistência ativa" description={dashboardData?.source === 'supabase' ? 'Tentativas sendo sincronizadas no Supabase.' : 'Supabase ainda não respondeu ou tabelas não existem. Fallback local ativo.'} />
+              <InsightCard title="Última atividade" description={dashboardData?.summary.lastAttemptAt ? new Date(dashboardData.summary.lastAttemptAt).toLocaleString('pt-BR') : 'Nenhuma tentativa salva nesta sessão ainda.'} />
+              <InsightCard title="Ajuste sugerido" description="Criar tabelas study_attempts e study_progress_summaries no Supabase para compartilhar progresso entre dispositivos." />
             </div>
           </div>
         </div>
@@ -309,10 +311,11 @@ const App: React.FC = () => {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <button
-            onClick={() => setShowAnswer(true)}
-            className="rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400"
+            onClick={saveAttempt}
+            disabled={selectedOption === null || saving}
+            className="rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Corrigir questão
+            {saving ? 'Salvando...' : 'Corrigir e salvar tentativa'}
           </button>
           <button
             onClick={() => {
@@ -326,9 +329,14 @@ const App: React.FC = () => {
         </div>
 
         {showAnswer && (
-          <div className="mt-6 rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-5">
-            <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Comentário do mentor</p>
-            <p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p>
+          <div className="mt-6 space-y-4">
+            <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-5">
+              <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Comentário do mentor</p>
+              <p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p>
+            </div>
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
+              {lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso.' : 'Selecione uma alternativa para salvar o resultado.'}
+            </div>
           </div>
         )}
       </div>
@@ -346,8 +354,8 @@ const App: React.FC = () => {
           </div>
           <div className="grid gap-3 sm:grid-cols-3">
             <MiniStat label="Horas previstas" value="11h" />
-            <MiniStat label="Questões-meta" value="210" />
-            <MiniStat label="Revisões-chave" value="18" />
+            <MiniStat label="Questões-meta" value={`${dashboardData?.summary.weeklyGoal ?? 0}`} />
+            <MiniStat label="Feitas hoje" value={`${dashboardData?.summary.completedToday ?? 0}`} />
           </div>
         </div>
       </section>
@@ -390,8 +398,8 @@ const App: React.FC = () => {
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <ChecklistItem done label="Definir edital e peso por disciplina" />
               <ChecklistItem done label="Separar caderno de erros" />
-              <ChecklistItem done={false} label="Programar revisões de 7 e 30 dias" />
-              <ChecklistItem done={false} label="Agendar simulado completo de sábado" />
+              <ChecklistItem done={Boolean(dashboardData?.summary.lastAttemptAt)} label="Salvar primeiras tentativas" />
+              <ChecklistItem done={dashboardData?.source === 'supabase'} label="Sincronizar com Supabase" />
             </div>
           </div>
         </div>
@@ -408,8 +416,8 @@ const App: React.FC = () => {
             <h1 className="mt-2 text-3xl font-semibold text-white">Acompanhe desempenho, retenção e ritmo.</h1>
           </div>
           <div className="flex gap-3 text-sm text-slate-300">
-            <span className="rounded-full bg-white/5 px-4 py-2">Janela: 30 dias</span>
-            <span className="rounded-full bg-emerald-500/10 px-4 py-2 text-emerald-300">Tendência positiva</span>
+            <span className="rounded-full bg-white/5 px-4 py-2">Janela: acumulado local + Supabase</span>
+            <span className="rounded-full bg-emerald-500/10 px-4 py-2 text-emerald-300">Fonte: {dashboardData?.source === 'supabase' ? 'Supabase' : 'Fallback local'}</span>
           </div>
         </div>
       </section>
@@ -418,20 +426,14 @@ const App: React.FC = () => {
         <div className={`${panel} p-6 lg:col-span-2`}>
           <h2 className="mb-5 text-xl font-semibold text-white">Linha de evolução</h2>
           <div className="space-y-4">
-            {[
-              { label: 'Semana 1', value: 48 },
-              { label: 'Semana 2', value: 57 },
-              { label: 'Semana 3', value: 66 },
-              { label: 'Semana 4', value: 74 },
-              { label: 'Semana 5', value: 79 },
-            ].map((point) => (
-              <div key={point.label}>
+            {(dashboardData?.subjectProgress || []).map((point) => (
+              <div key={point.subject}>
                 <div className="mb-2 flex items-center justify-between text-sm text-slate-300">
-                  <span>{point.label}</span>
-                  <span>{point.value}%</span>
+                  <span>{point.subject}</span>
+                  <span>{point.accuracy}%</span>
                 </div>
                 <div className="h-3 rounded-full bg-white/5">
-                  <div className="h-3 rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-fuchsia-500" style={{ width: `${point.value}%` }} />
+                  <div className="h-3 rounded-full bg-gradient-to-r from-cyan-400 via-indigo-500 to-fuchsia-500" style={{ width: `${point.accuracy}%` }} />
                 </div>
               </div>
             ))}
@@ -440,7 +442,7 @@ const App: React.FC = () => {
         <div className={`${panel} p-6`}>
           <h2 className="mb-5 text-xl font-semibold text-white">Ranking por disciplina</h2>
           <div className="space-y-4">
-            {[...subjectProgress].sort((a, b) => b.accuracy - a.accuracy).map((item, index) => (
+            {[...(dashboardData?.subjectProgress || [])].sort((a, b) => b.accuracy - a.accuracy).map((item, index) => (
               <div key={item.subject} className="flex items-center justify-between rounded-2xl bg-white/5 p-4">
                 <div>
                   <p className="text-sm text-slate-400">#{index + 1}</p>
@@ -460,7 +462,7 @@ const App: React.FC = () => {
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,_rgba(99,102,241,0.25),_transparent_30%),radial-gradient(circle_at_bottom_right,_rgba(45,212,191,0.12),_transparent_30%)]" />
       <div className="relative flex min-h-screen">
         <aside className="hidden w-80 shrink-0 border-r border-white/10 bg-slate-950/80 p-6 lg:flex lg:flex-col">
-          <SidebarContent currentView={currentView} onChangeView={setCurrentView} />
+          <SidebarContent currentView={currentView} onChangeView={setCurrentView} source={dashboardData?.source ?? 'local'} />
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
@@ -476,6 +478,9 @@ const App: React.FC = () => {
                 </div>
               </div>
               <div className="flex items-center gap-3">
+                <div className={`hidden items-center gap-2 rounded-2xl border px-3 py-2 text-sm md:flex ${dashboardData?.source === 'supabase' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/20 bg-amber-500/10 text-amber-200'}`}>
+                  <Signal size={16} /> {dashboardData?.source === 'supabase' ? 'Supabase online' : 'Fallback local'}
+                </div>
                 <button className="rounded-2xl border border-white/10 p-3 text-slate-300"><Bell size={18} /></button>
                 <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-200"><User size={18} /></div>
@@ -489,10 +494,18 @@ const App: React.FC = () => {
           </header>
 
           <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
-            {currentView === 'dashboard' && renderDashboard()}
-            {currentView === 'questoes' && renderQuestions()}
-            {currentView === 'plano' && renderPlan()}
-            {currentView === 'evolucao' && renderProgress()}
+            {loading || !dashboardData ? (
+              <div className={`${panel} flex items-center gap-3 p-6 text-slate-300`}>
+                <RefreshCcw size={18} className="animate-spin" /> Carregando progresso...
+              </div>
+            ) : (
+              <>
+                {currentView === 'dashboard' && renderDashboard()}
+                {currentView === 'questoes' && renderQuestions()}
+                {currentView === 'plano' && renderPlan()}
+                {currentView === 'evolucao' && renderProgress()}
+              </>
+            )}
           </main>
         </div>
       </div>
@@ -510,7 +523,7 @@ const App: React.FC = () => {
                 <X size={18} />
               </button>
             </div>
-            <SidebarContent currentView={currentView} onChangeView={(view) => { setCurrentView(view); setMenuOpen(false); }} />
+            <SidebarContent currentView={currentView} onChangeView={(view) => { setCurrentView(view); setMenuOpen(false); }} source={dashboardData?.source ?? 'local'} />
           </div>
         </div>
       )}
@@ -518,14 +531,14 @@ const App: React.FC = () => {
   );
 };
 
-const SidebarContent = ({ currentView, onChangeView }: { currentView: ViewKey; onChangeView: (view: ViewKey) => void }) => (
+const SidebarContent = ({ currentView, onChangeView, source }: { currentView: StudyViewKey; onChangeView: (view: StudyViewKey) => void; source: 'supabase' | 'local' }) => (
   <>
     <div className="mb-8">
       <div className="flex h-14 w-14 items-center justify-center rounded-3xl bg-gradient-to-br from-indigo-500 to-cyan-400 text-white shadow-lg shadow-indigo-900/30">
         <GraduationCap size={28} />
       </div>
       <h2 className="mt-4 text-2xl font-semibold text-white">Concurso Mentor</h2>
-      <p className="mt-2 text-sm text-slate-400">Frontend adaptado com foco em progresso, prática e planejamento.</p>
+      <p className="mt-2 text-sm text-slate-400">Frontend com Supabase e fallback local para não travar o MVP.</p>
     </div>
 
     <nav className="space-y-2">
@@ -561,7 +574,7 @@ const SidebarContent = ({ currentView, onChangeView }: { currentView: ViewKey; o
         <Star className="text-amber-300" size={18} />
         <p className="font-medium text-white">Status do MVP</p>
       </div>
-      <p className="mt-3 text-sm text-slate-300">Dados mockados, navegação pronta e base preparada para conectar backend depois.</p>
+      <p className="mt-3 text-sm text-slate-300">Persistência: {source === 'supabase' ? 'Supabase ativo' : 'Local fallback ativo'}.</p>
     </div>
   </>
 );
