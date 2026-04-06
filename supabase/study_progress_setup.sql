@@ -25,18 +25,34 @@ create table if not exists public.study_progress_summaries (
 alter table public.study_attempts enable row level security;
 alter table public.study_progress_summaries enable row level security;
 
-create policy if not exists "public read study attempts"
+drop policy if exists "public read study attempts" on public.study_attempts;
+create policy "public read study attempts"
   on public.study_attempts for select
   using (true);
 
-create policy if not exists "public insert study attempts"
+drop policy if exists "public insert study attempts" on public.study_attempts;
+create policy "public insert study attempts"
   on public.study_attempts for insert
   with check (true);
 
-create policy if not exists "public read study summaries"
+drop policy if exists "public update study attempts" on public.study_attempts;
+create policy "public update study attempts"
+  on public.study_attempts for update
+  using (true)
+  with check (true);
+
+drop policy if exists "public read study summaries" on public.study_progress_summaries;
+create policy "public read study summaries"
   on public.study_progress_summaries for select
   using (true);
 
-create policy if not exists "public upsert study summaries"
+drop policy if exists "public insert study summaries" on public.study_progress_summaries;
+create policy "public insert study summaries"
   on public.study_progress_summaries for insert
+  with check (true);
+
+drop policy if exists "public update study summaries" on public.study_progress_summaries;
+create policy "public update study summaries"
+  on public.study_progress_summaries for update
+  using (true)
   with check (true);

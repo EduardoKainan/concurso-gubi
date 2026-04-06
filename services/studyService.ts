@@ -4,6 +4,7 @@ import { StudyAttempt, StudyDashboardData, StudyQuestionItem, StudySubjectProgre
 const ATTEMPTS_TABLE = 'study_attempts';
 const SUMMARY_TABLE = 'study_progress_summaries';
 const STORAGE_KEY = 'adroi.study.v1';
+const SUMMARY_ID = 'public-demo';
 
 const seedProgress: StudySubjectProgress[] = [
   { subject: 'Direito Constitucional', progress: 76, streak: 5, accuracy: 81, pendingReviews: 12, attempts: 14 },
@@ -129,19 +130,35 @@ export const studyService = {
     const local = getStoredData();
 
     try {
-      const { data, error } = await supabase
-        .from(ATTEMPTS_TABLE)
-        .select('*')
-        .order('attempted_at', { ascending: false })
-        .limit(200);
+      const [{ data: attemptsData, error: attemptsError }, { data: summaryData, error: summaryError }] = await Promise.all([
+        supabase.from(ATTEMPTS_TABLE).select('*').order('attempted_at', { ascending: false }).limit(200),
+        supabase.from(SUMMARY_TABLE).select('*').eq('id', SUMMARY_ID).maybeSingle(),
+      ]);
 
-      if (error) throw error;
+      if (attemptsError) throw attemptsError;
+      if (summaryError) throw summaryError;
 
-      const attempts = (data || []).map(toAttempt);
+      const attempts = (attemptsData || []).map(toAttempt);
       const calculated = calculateDashboardData(attempts, questions);
 
-      persistLocal(calculated);
-      return { source: 'supabase', ...calculated };
+      const merged = summaryData
+        ? {
+            ...calculated,
+            summary: {
+              ...calculated.summary,
+              totalAttempts: summaryData.total_attempts ?? calculated.summary.totalAttempts,
+              totalCorrect: summaryData.total_correct ?? calculated.summary.totalCorrect,
+              accuracy: summaryData.accuracy ?? calculated.summary.accuracy,
+              pendingReviews: summaryData.pending_reviews ?? calculated.summary.pendingReviews,
+              completedToday: summaryData.completed_today ?? calculated.summary.completedToday,
+              currentStreak: summaryData.current_streak ?? calculated.summary.currentStreak,
+              lastAttemptAt: summaryData.last_attempt_at ?? calculated.summary.lastAttemptAt,
+            },
+          }
+        : calculated;
+
+      persistLocal(merged);
+      return { source: 'supabase', ...merged };
     } catch (error) {
       console.warn('Supabase indisponível para estudos, usando fallback local.', error);
       return { ...local, source: 'local' };
@@ -174,10 +191,10 @@ export const studyService = {
       ]);
       if (error) throw error;
 
-      await supabase.from(SUMMARY_TABLE).upsert(
+      const { error: summaryUpsertError } = await supabase.from(SUMMARY_TABLE).upsert(
         [
           {
-            id: 'public-demo',
+            id: SUMMARY_ID,
             total_attempts: nextData.summary.totalAttempts,
             total_correct: nextData.summary.totalCorrect,
             accuracy: nextData.summary.accuracy,
@@ -191,6 +208,11 @@ export const studyService = {
         { onConflict: 'id' }
       );
 
+      if (summaryUpsertError) {
+        throw summaryUpsertError;
+      }
+
+      persistLocal(nextData);
       return { source: 'supabase', ...nextData };
     } catch (error) {
       console.warn('Falha ao persistir no Supabase, mantendo progresso local.', error);
