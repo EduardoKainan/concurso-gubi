@@ -1,1 +1,3 @@
-��v��� 11��슉ܭ�y�mz{"�
+-- Entry point de schema para módulo de estudos
+-- 1) rode supabase/study_content_setup.sql para matérias, tópicos e questões
+-- 2) rode supabase/study_progress_setup.sql para tentativas e resumo de progresso

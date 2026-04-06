@@ -25,9 +25,9 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { StudyDashboardData, StudyViewKey } from './types';
+import { StudyDashboardData, StudyQuestionItem, StudyViewKey } from './types';
 import { studyService } from './services/studyService';
-import { studyPlan, studyQuestions as questions } from './data/studySeed';
+import { studyPlan, studyQuestions as localQuestions } from './data/studySeed';
 
 const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<any> }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -42,7 +42,8 @@ const panel = 'rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm sh
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<StudyViewKey>('dashboard');
   const [menuOpen, setMenuOpen] = useState(false);
-  const [selectedQuestion, setSelectedQuestion] = useState(questions[0]);
+  const [questionBank, setQuestionBank] = useState<StudyQuestionItem[]>(localQuestions);
+  const [selectedQuestion, setSelectedQuestion] = useState(localQuestions[0]);
   const [selectedOption, setSelectedOption] = useState<number | null>(null);
   const [showAnswer, setShowAnswer] = useState(false);
   const [lastRecordedQuestionId, setLastRecordedQuestionId] = useState<number | null>(null);
@@ -53,7 +54,10 @@ const App: React.FC = () => {
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      const data = await studyService.getDashboardData(questions);
+      const loadedQuestions = await studyService.getQuestionBank();
+      const data = await studyService.getDashboardData(loadedQuestions);
+      setQuestionBank(loadedQuestions);
+      setSelectedQuestion(loadedQuestions[0] || localQuestions[0]);
       setDashboardData(data);
       setLoading(false);
     };
@@ -81,7 +85,7 @@ const App: React.FC = () => {
         selected_option: selectedOption,
         is_correct: selectedQuestion.correctIndex === selectedOption,
       },
-      questions
+      questionBank
     );
 
     setDashboardData(nextData);
@@ -173,7 +177,7 @@ const App: React.FC = () => {
             <div className="mt-4 space-y-3 text-sm text-slate-300">
               <InsightCard title="Persistência ativa" description={dashboardData?.source === 'supabase' ? 'Tentativas sendo sincronizadas no Supabase.' : 'Supabase ainda não respondeu ou tabelas não existem. Fallback local ativo.'} />
               <InsightCard title="Última atividade" description={dashboardData?.summary.lastAttemptAt ? new Date(dashboardData.summary.lastAttemptAt).toLocaleString('pt-BR') : 'Nenhuma tentativa salva nesta sessão ainda.'} />
-              <InsightCard title="Ajuste sugerido" description="Criar tabelas study_attempts e study_progress_summaries no Supabase para compartilhar progresso entre dispositivos." />
+              <InsightCard title="Ajuste sugerido" description="Suba `study_content_setup.sql` e `study_progress_setup.sql` no Supabase para compartilhar banco de questões e progresso entre dispositivos." />
             </div>
           </div>
         </div>
@@ -186,7 +190,7 @@ const App: React.FC = () => {
       <div className={`${panel} p-4`}>
         <h2 className="mb-4 text-lg font-semibold text-white">Fila de questões</h2>
         <div className="space-y-3">
-          {questions.map((question) => {
+          {questionBank.map((question) => {
             const active = selectedQuestion.id === question.id;
             return (
               <button

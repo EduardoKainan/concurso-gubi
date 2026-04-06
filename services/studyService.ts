@@ -1,9 +1,12 @@
 import { supabase } from '../lib/supabase';
-import { studySubjectProgressSeed, studySummarySeed } from '../data/studySeed';
+import { studyQuestions as studyQuestionsSeed, studySubjectProgressSeed, studySummarySeed } from '../data/studySeed';
 import { StudyAttempt, StudyDashboardData, StudyQuestionItem, StudySubjectProgress, StudySummary } from '../types';
 
 const ATTEMPTS_TABLE = 'study_attempts';
 const SUMMARY_TABLE = 'study_progress_summaries';
+const SUBJECTS_TABLE = 'study_subjects';
+const TOPICS_TABLE = 'study_topics';
+const QUESTIONS_TABLE = 'study_questions';
 const STORAGE_KEY = 'adroi.study.v1';
 const SUMMARY_ID = 'public-demo';
 
@@ -120,6 +123,17 @@ const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuesti
 
 const getAttemptedAt = (row: any): string => row.attempted_at || row.answered_at || row.created_at || new Date().toISOString();
 
+const toQuestion = (row: any, topicsById: Map<string, string>, subjectsById: Map<string, string>): StudyQuestionItem => ({
+  id: Number(row.id),
+  subject: subjectsById.get(row.subject_id) || row.subject_name || row.subject || 'Sem matéria',
+  topic: topicsById.get(row.topic_id) || row.topic_name || row.topic || 'Sem tópico',
+  level: row.level,
+  statement: row.statement,
+  options: Array.isArray(row.options) ? row.options : [],
+  correctIndex: Number(row.correct_index),
+  explanation: row.explanation,
+});
+
 const toAttempt = (row: any): StudyAttempt => ({
   id: String(row.id),
   question_id: Number(row.question_id),
@@ -131,6 +145,29 @@ const toAttempt = (row: any): StudyAttempt => ({
 });
 
 export const studyService = {
+  async getQuestionBank(): Promise<StudyQuestionItem[]> {
+    try {
+      const [{ data: subjectsData, error: subjectsError }, { data: topicsData, error: topicsError }, { data: questionsData, error: questionsError }] = await Promise.all([
+        supabase.from(SUBJECTS_TABLE).select('id, name').order('sort_order', { ascending: true }),
+        supabase.from(TOPICS_TABLE).select('id, subject_id, name').order('sort_order', { ascending: true }),
+        supabase.from(QUESTIONS_TABLE).select('id, subject_id, topic_id, level, statement, options, correct_index, explanation, sort_order').order('sort_order', { ascending: true }),
+      ]);
+
+      if (subjectsError) throw subjectsError;
+      if (topicsError) throw topicsError;
+      if (questionsError) throw questionsError;
+      if (!questionsData?.length) return studyQuestionsSeed;
+
+      const subjectsById = new Map((subjectsData || []).map((item) => [item.id, item.name]));
+      const topicsById = new Map((topicsData || []).map((item) => [item.id, item.name]));
+
+      return questionsData.map((row) => toQuestion(row, topicsById, subjectsById));
+    } catch (error) {
+      console.warn('Falha ao carregar banco de questões do Supabase, usando seed local.', error);
+      return studyQuestionsSeed;
+    }
+  },
+
   async getDashboardData(questions: StudyQuestionItem[]): Promise<StudyDashboardData> {
     const local = getStoredData();
 
