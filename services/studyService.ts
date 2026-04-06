@@ -6,6 +6,12 @@ const SUMMARY_TABLE = 'study_progress_summaries';
 const STORAGE_KEY = 'adroi.study.v1';
 const SUMMARY_ID = 'public-demo';
 
+const isAuthSessionMissingError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
+  return message.toLowerCase().includes('auth session missing');
+};
+
 const seedProgress: StudySubjectProgress[] = [
   { subject: 'Direito Constitucional', progress: 76, streak: 5, accuracy: 81, pendingReviews: 12, attempts: 14 },
   { subject: 'Direito Administrativo', progress: 64, streak: 4, accuracy: 74, pendingReviews: 18, attempts: 12 },
@@ -160,7 +166,11 @@ export const studyService = {
       persistLocal(merged);
       return { source: 'supabase', ...merged };
     } catch (error) {
-      console.warn('Supabase indisponível para estudos, usando fallback local.', error);
+      if (isAuthSessionMissingError(error)) {
+        console.info('Supabase sem sessão autenticada para leitura, mantendo fallback local público.');
+      } else {
+        console.warn('Supabase indisponível para estudos, usando fallback local.', error);
+      }
       return { ...local, source: 'local' };
     }
   },
@@ -215,7 +225,11 @@ export const studyService = {
       persistLocal(nextData);
       return { source: 'supabase', ...nextData };
     } catch (error) {
-      console.warn('Falha ao persistir no Supabase, mantendo progresso local.', error);
+      if (isAuthSessionMissingError(error)) {
+        console.info('Supabase recusou escrita por falta de sessão auth. Verifique RLS/policies públicas no projeto.');
+      } else {
+        console.warn('Falha ao persistir no Supabase, mantendo progresso local.', error);
+      }
       return { source: 'local', ...nextData };
     }
   },

@@ -25,34 +25,44 @@ create table if not exists public.study_progress_summaries (
 alter table public.study_attempts enable row level security;
 alter table public.study_progress_summaries enable row level security;
 
+grant usage on schema public to anon, authenticated;
+grant select, insert, update on public.study_attempts to anon, authenticated;
+grant select, insert, update on public.study_progress_summaries to anon, authenticated;
+
 drop policy if exists "public read study attempts" on public.study_attempts;
 create policy "public read study attempts"
   on public.study_attempts for select
+  to anon, authenticated
   using (true);
 
 drop policy if exists "public insert study attempts" on public.study_attempts;
 create policy "public insert study attempts"
   on public.study_attempts for insert
+  to anon, authenticated
   with check (true);
 
 drop policy if exists "public update study attempts" on public.study_attempts;
 create policy "public update study attempts"
   on public.study_attempts for update
+  to anon, authenticated
   using (true)
   with check (true);
 
 drop policy if exists "public read study summaries" on public.study_progress_summaries;
 create policy "public read study summaries"
   on public.study_progress_summaries for select
+  to anon, authenticated
   using (true);
 
 drop policy if exists "public insert study summaries" on public.study_progress_summaries;
 create policy "public insert study summaries"
   on public.study_progress_summaries for insert
+  to anon, authenticated
   with check (true);
 
 drop policy if exists "public update study summaries" on public.study_progress_summaries;
 create policy "public update study summaries"
   on public.study_progress_summaries for update
+  to anon, authenticated
   using (true)
   with check (true);
