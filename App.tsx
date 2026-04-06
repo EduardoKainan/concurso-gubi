@@ -25,64 +25,9 @@ import {
   User,
   X,
 } from 'lucide-react';
-import { StudyDashboardData, StudyPlanDay, StudyQuestionItem, StudyViewKey } from './types';
+import { StudyDashboardData, StudyViewKey } from './types';
 import { studyService } from './services/studyService';
-
-const questions: StudyQuestionItem[] = [
-  {
-    id: 1,
-    subject: 'Direito Constitucional',
-    topic: 'Direitos e garantias fundamentais',
-    level: 'Médio',
-    statement: 'A liberdade de associação poderá ser compulsoriamente dissolvida por decisão administrativa, desde que exista interesse público relevante.',
-    options: [
-      'Certo, desde que haja motivação expressa.',
-      'Errado, porque só decisão judicial pode dissolver compulsoriamente associação.',
-      'Certo, se a associação não tiver fins lícitos.',
-      'Errado, porque associações nunca podem ser dissolvidas.',
-    ],
-    correctIndex: 1,
-    explanation: 'A Constituição exige decisão judicial transitada em julgado para dissolução compulsória de associação.',
-  },
-  {
-    id: 2,
-    subject: 'Português',
-    topic: 'Crase',
-    level: 'Fácil',
-    statement: 'Assinale a alternativa em que o uso da crase está correto.',
-    options: [
-      'Entreguei o relatório à diretora ontem.',
-      'Voltamos á empresa no fim do dia.',
-      'A reunião ocorrerá as 14h.',
-      'Escrevi à lápis durante a prova.',
-    ],
-    correctIndex: 0,
-    explanation: 'Há crase em “à diretora” porque ocorre a fusão da preposição “a” com o artigo feminino “a”.',
-  },
-  {
-    id: 3,
-    subject: 'Raciocínio Lógico',
-    topic: 'Proposições equivalentes',
-    level: 'Difícil',
-    statement: 'A negação de “Se estudo, então passo” é logicamente equivalente a:',
-    options: [
-      'Estudo e não passo.',
-      'Não estudo e passo.',
-      'Se não estudo, então não passo.',
-      'Passo se e somente se estudo.',
-    ],
-    correctIndex: 0,
-    explanation: 'A negação de uma condicional “p → q” é “p e não q”.',
-  },
-];
-
-const studyPlan: StudyPlanDay[] = [
-  { day: 'Segunda', focus: 'Português + Revisão 24h', goal: '40 questões + mapa mental', duration: '2h', status: 'done' },
-  { day: 'Terça', focus: 'Constitucional', goal: 'Lei seca + 30 questões', duration: '2h30', status: 'done' },
-  { day: 'Quarta', focus: 'Administrativo', goal: 'Poderes administrativos + revisão', duration: '2h', status: 'today' },
-  { day: 'Quinta', focus: 'Raciocínio Lógico', goal: 'Listas comentadas + flashcards', duration: '1h30', status: 'next' },
-  { day: 'Sexta', focus: 'Simulado direcionado', goal: '60 questões cronometradas', duration: '3h', status: 'next' },
-];
+import { studyPlan, studyQuestions as questions } from './data/studySeed';
 
 const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<any> }[] = [
   { key: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },

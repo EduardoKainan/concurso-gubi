@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase';
+import { studySubjectProgressSeed, studySummarySeed } from '../data/studySeed';
 import { StudyAttempt, StudyDashboardData, StudyQuestionItem, StudySubjectProgress, StudySummary } from '../types';
 
 const ATTEMPTS_TABLE = 'study_attempts';
@@ -22,23 +23,9 @@ const isAuthSessionMissingError = (error: unknown): boolean => {
   return message.toLowerCase().includes('auth session missing');
 };
 
-const seedProgress: StudySubjectProgress[] = [
-  { subject: 'Direito Constitucional', progress: 76, streak: 5, accuracy: 81, pendingReviews: 12, attempts: 14 },
-  { subject: 'Direito Administrativo', progress: 64, streak: 4, accuracy: 74, pendingReviews: 18, attempts: 12 },
-  { subject: 'Português', progress: 88, streak: 9, accuracy: 90, pendingReviews: 6, attempts: 18 },
-  { subject: 'Raciocínio Lógico', progress: 52, streak: 3, accuracy: 69, pendingReviews: 20, attempts: 10 },
-];
+const seedProgress: StudySubjectProgress[] = studySubjectProgressSeed;
 
-const seedSummary: StudySummary = {
-  totalAttempts: 54,
-  totalCorrect: 43,
-  accuracy: 80,
-  currentStreak: 9,
-  pendingReviews: 56,
-  completedToday: 18,
-  simulatedExams: 12,
-  weeklyGoal: 210,
-};
+const seedSummary: StudySummary = studySummarySeed;
 
 const getStoredData = (): StudyDashboardData => {
   if (typeof window === 'undefined') {
