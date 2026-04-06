@@ -1,13 +1,29 @@
 import { supabase } from '../lib/supabase';
-import { studyQuestions as studyQuestionsSeed, studySubjectProgressSeed, studySummarySeed } from '../data/studySeed';
-import { StudyAttempt, StudyDashboardData, StudyQuestionItem, StudySubjectProgress, StudySummary } from '../types';
+import {
+  studyEssayPrompts,
+  studyQuestions as studyQuestionsSeed,
+  studySubjectProgressSeed,
+  studySummarySeed,
+} from '../data/studySeed';
+import {
+  StudyAttempt,
+  StudyDashboardData,
+  StudyEssayEntry,
+  StudyEssayPrompt,
+  StudyErrorInsight,
+  StudyQuestionItem,
+  StudySubjectProgress,
+  StudySummary,
+} from '../types';
 
 const ATTEMPTS_TABLE = 'study_attempts';
 const SUMMARY_TABLE = 'study_progress_summaries';
 const SUBJECTS_TABLE = 'study_subjects';
 const TOPICS_TABLE = 'study_topics';
 const QUESTIONS_TABLE = 'study_questions';
-const STORAGE_KEY = 'adroi.study.v1';
+const ESSAYS_TABLE = 'study_essay_entries';
+const STORAGE_KEY = 'adroi.study.v2';
+const ESSAY_STORAGE_KEY = 'adroi.study.essays.v1';
 const SUMMARY_ID = 'public-demo';
 
 const getClientSessionId = (): string => {
@@ -27,17 +43,51 @@ const isAuthSessionMissingError = (error: unknown): boolean => {
 };
 
 const seedProgress: StudySubjectProgress[] = studySubjectProgressSeed;
-
 const seedSummary: StudySummary = studySummarySeed;
+
+const calculateErrorInsights = (attempts: StudyAttempt[]): StudyErrorInsight[] => {
+  const byTopic = new Map<string, StudyAttempt[]>();
+
+  attempts.forEach((attempt) => {
+    const key = `${attempt.subject}::${attempt.topic}`;
+    const list = byTopic.get(key) || [];
+    list.push(attempt);
+    byTopic.set(key, list);
+  });
+
+  return Array.from(byTopic.entries())
+    .map(([key, topicAttempts]) => {
+      const [subject, topic] = key.split('::');
+      const totalAttempts = topicAttempts.length;
+      const totalErrors = topicAttempts.filter((item) => !item.is_correct).length;
+      const correct = totalAttempts - totalErrors;
+      const accuracy = totalAttempts > 0 ? Math.round((correct / totalAttempts) * 100) : 0;
+
+      return {
+        subject,
+        topic,
+        totalAttempts,
+        totalErrors,
+        accuracy,
+        lastAttemptAt: topicAttempts[0]?.attempted_at,
+      };
+    })
+    .filter((item) => item.totalErrors > 0)
+    .sort((a, b) => {
+      if (b.totalErrors !== a.totalErrors) return b.totalErrors - a.totalErrors;
+      return a.accuracy - b.accuracy;
+    })
+    .slice(0, 8);
+};
 
 const getStoredData = (): StudyDashboardData => {
   if (typeof window === 'undefined') {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress };
+    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
   }
 
   const raw = window.localStorage.getItem(STORAGE_KEY);
   if (!raw) {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress };
+    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
   }
 
   try {
@@ -47,9 +97,10 @@ const getStoredData = (): StudyDashboardData => {
       attempts: parsed.attempts || [],
       summary: parsed.summary || seedSummary,
       subjectProgress: parsed.subjectProgress || seedProgress,
+      errorInsights: parsed.errorInsights || calculateErrorInsights(parsed.attempts || []),
     };
   } catch {
-    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress };
+    return { source: 'local', attempts: [], summary: seedSummary, subjectProgress: seedProgress, errorInsights: [] };
   }
 };
 
@@ -83,8 +134,7 @@ const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuesti
     const uniqueQuestions = new Set(subjectAttempts.map((item) => item.question_id)).size;
     const totalQuestions = questionsBySubject.get(seed.subject) || 1;
     const progress = Math.min(100, Math.max(seed.progress, Math.round((uniqueQuestions / totalQuestions) * 100)));
-    const pendingReviews = Math.max(0, seed.pendingReviews - correct);
-
+    const pendingReviews = Math.max(0, seed.pendingReviews + subjectAttempts.filter((item) => !item.is_correct).length - correct);
     const uniqueDays = Array.from(new Set(subjectAttempts.map((item) => new Date(item.attempted_at).toDateString()))).length;
 
     return {
@@ -108,6 +158,7 @@ const calculateDashboardData = (attempts: StudyAttempt[], questions: StudyQuesti
   return {
     attempts,
     subjectProgress,
+    errorInsights: calculateErrorInsights(attempts),
     summary: {
       ...seedSummary,
       totalAttempts,
@@ -142,6 +193,33 @@ const toAttempt = (row: any): StudyAttempt => ({
   selected_option: Number(row.selected_option),
   is_correct: Boolean(row.is_correct),
   attempted_at: getAttemptedAt(row),
+});
+
+const getStoredEssays = (): StudyEssayEntry[] => {
+  if (typeof window === 'undefined') return [];
+  const raw = window.localStorage.getItem(ESSAY_STORAGE_KEY);
+  if (!raw) return [];
+
+  try {
+    return JSON.parse(raw) as StudyEssayEntry[];
+  } catch {
+    return [];
+  }
+};
+
+const persistEssaysLocal = (entries: StudyEssayEntry[]) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(ESSAY_STORAGE_KEY, JSON.stringify(entries));
+};
+
+const toEssayEntry = (row: any): StudyEssayEntry => ({
+  id: String(row.id),
+  promptId: String(row.prompt_id),
+  title: row.title,
+  subject: row.subject,
+  topic: row.topic,
+  answer: row.answer,
+  createdAt: row.created_at || new Date().toISOString(),
 });
 
 export const studyService = {
@@ -257,9 +335,7 @@ export const studyService = {
         { onConflict: 'session_id' }
       );
 
-      if (summaryUpsertError) {
-        throw summaryUpsertError;
-      }
+      if (summaryUpsertError) throw summaryUpsertError;
 
       persistLocal(nextData);
       return { source: 'supabase', ...nextData };
@@ -270,6 +346,63 @@ export const studyService = {
         console.warn('Falha ao persistir no Supabase, mantendo progresso local.', error);
       }
       return { source: 'local', ...nextData };
+    }
+  },
+
+  getEssayPrompts(): StudyEssayPrompt[] {
+    return studyEssayPrompts;
+  },
+
+  async getEssayHistory(): Promise<StudyEssayEntry[]> {
+    const local = getStoredEssays();
+
+    try {
+      const { data, error } = await supabase
+        .from(ESSAYS_TABLE)
+        .select('*')
+        .eq('session_id', getClientSessionId())
+        .order('created_at', { ascending: false })
+        .limit(30);
+
+      if (error) throw error;
+      const entries = (data || []).map(toEssayEntry);
+      persistEssaysLocal(entries);
+      return entries;
+    } catch (error) {
+      console.info('Histórico de discursivas em fallback local.', error);
+      return local;
+    }
+  },
+
+  async saveEssayEntry(input: Omit<StudyEssayEntry, 'id' | 'createdAt'>): Promise<StudyEssayEntry[]> {
+    const entry: StudyEssayEntry = {
+      ...input,
+      id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
+      createdAt: new Date().toISOString(),
+    };
+
+    const localEntries = [entry, ...getStoredEssays()];
+    persistEssaysLocal(localEntries);
+
+    try {
+      const { error } = await supabase.from(ESSAYS_TABLE).insert([
+        {
+          id: entry.id,
+          session_id: getClientSessionId(),
+          prompt_id: entry.promptId,
+          title: entry.title,
+          subject: entry.subject,
+          topic: entry.topic,
+          answer: entry.answer,
+          created_at: entry.createdAt,
+        },
+      ]);
+
+      if (error) throw error;
+      return localEntries;
+    } catch (error) {
+      console.info('Supabase indisponível para discursiva, mantendo histórico local.', error);
+      return localEntries;
     }
   },
 };

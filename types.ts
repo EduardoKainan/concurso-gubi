@@ -197,7 +197,7 @@ export interface Goal {
 
 export type ViewState = 'DASHBOARD' | 'CLIENT_DETAIL' | 'SETTINGS' | 'TASKS' | 'HELP' | 'SUPER_ADMIN' | 'REPORTS';
 
-export type StudyViewKey = 'dashboard' | 'questoes' | 'plano' | 'evolucao';
+export type StudyViewKey = 'dashboard' | 'questoes' | 'plano' | 'evolucao' | 'discursivas';
 
 export type StudyQuestionLevel = 'Fácil' | 'Médio' | 'Difícil';
 
@@ -220,6 +220,17 @@ export interface StudyPlanDay {
   status: 'done' | 'today' | 'next';
 }
 
+export interface StudyPriorityTrailItem {
+  id: string;
+  subject: string;
+  topic: string;
+  reason: string;
+  action: string;
+  targetQuestions: number;
+  difficultyFocus: StudyQuestionLevel | 'Misto';
+  priority: 'alta' | 'media';
+}
+
 export interface StudyAttempt {
   id: string;
   question_id: number;
@@ -228,6 +239,15 @@ export interface StudyAttempt {
   selected_option: number;
   is_correct: boolean;
   attempted_at: string;
+}
+
+export interface StudyErrorInsight {
+  topic: string;
+  subject: string;
+  totalErrors: number;
+  totalAttempts: number;
+  accuracy: number;
+  lastAttemptAt?: string;
 }
 
 export interface StudySubjectProgress {
@@ -251,9 +271,30 @@ export interface StudySummary {
   lastAttemptAt?: string;
 }
 
+export interface StudyEssayPrompt {
+  id: string;
+  title: string;
+  subject: string;
+  topic: string;
+  prompt: string;
+  structure: string[];
+  evaluationCriteria: string[];
+}
+
+export interface StudyEssayEntry {
+  id: string;
+  promptId: string;
+  title: string;
+  subject: string;
+  topic: string;
+  answer: string;
+  createdAt: string;
+}
+
 export interface StudyDashboardData {
   source: 'supabase' | 'local';
   attempts: StudyAttempt[];
   summary: StudySummary;
   subjectProgress: StudySubjectProgress[];
+  errorInsights: StudyErrorInsight[];
 }
