@@ -136,6 +136,15 @@ const App: React.FC = () => {
     if (!selectedPrompt && essayPrompts[0]) setSelectedPromptId(essayPrompts[0].id);
   }, [selectedPrompt, essayPrompts]);
 
+  const goToNextQuestion = () => {
+    if (!selectedQuestion || !filteredQuestions.length) return;
+    const currentIndex = filteredQuestions.findIndex((item) => item.id === selectedQuestion.id);
+    const nextQuestion = filteredQuestions[(currentIndex + 1) % filteredQuestions.length];
+    setSelectedQuestion(nextQuestion);
+    setSelectedOption(null);
+    setShowAnswer(false);
+  };
+
   const saveAttempt = async () => {
     if (selectedOption === null || showAnswer || saving) return;
 
@@ -438,6 +447,14 @@ const App: React.FC = () => {
                 </div>
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
                   {lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso. Se errou, a revisão entra sozinha na fila temporal.' : 'Selecione uma alternativa para salvar o resultado.'}
+                </div>
+                <div className="flex flex-wrap gap-3">
+                  <button onClick={goToNextQuestion} className="rounded-2xl bg-emerald-500 px-5 py-3 font-medium text-white transition hover:bg-emerald-400">
+                    Próxima questão
+                  </button>
+                  <button onClick={() => { setSelectedOption(null); setShowAnswer(false); }} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
+                    Refazer esta questão
+                  </button>
                 </div>
               </div>
             )}
