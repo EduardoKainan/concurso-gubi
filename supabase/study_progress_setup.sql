@@ -2,6 +2,7 @@ create extension if not exists pgcrypto;
 
 create table if not exists public.study_attempts (
   id uuid primary key default gen_random_uuid(),
+  session_id text not null,
   question_id integer not null,
   subject text not null,
   topic text not null,
@@ -12,6 +13,7 @@ create table if not exists public.study_attempts (
 
 create table if not exists public.study_progress_summaries (
   id text primary key,
+  session_id text not null unique,
   total_attempts integer not null default 0,
   total_correct integer not null default 0,
   accuracy integer not null default 0,
@@ -21,6 +23,16 @@ create table if not exists public.study_progress_summaries (
   last_attempt_at timestamptz,
   updated_at timestamptz not null default now()
 );
+
+alter table public.study_attempts add column if not exists session_id text;
+alter table public.study_progress_summaries add column if not exists session_id text;
+update public.study_attempts set session_id = 'public-demo' where session_id is null;
+update public.study_progress_summaries set session_id = coalesce(session_id, id, 'public-demo') where session_id is null;
+alter table public.study_attempts alter column session_id set not null;
+alter table public.study_progress_summaries alter column session_id set not null;
+
+create index if not exists idx_study_attempts_session_id on public.study_attempts(session_id);
+create unique index if not exists idx_study_progress_summaries_session_id on public.study_progress_summaries(session_id);
 
 alter table public.study_attempts enable row level security;
 alter table public.study_progress_summaries enable row level security;

@@ -6,6 +6,16 @@ const SUMMARY_TABLE = 'study_progress_summaries';
 const STORAGE_KEY = 'adroi.study.v1';
 const SUMMARY_ID = 'public-demo';
 
+const getClientSessionId = (): string => {
+  if (typeof window === 'undefined') return SUMMARY_ID;
+  const key = 'adroi.session.id';
+  const existing = window.localStorage.getItem(key);
+  if (existing) return existing;
+  const next = typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : `session-${Date.now()}`;
+  window.localStorage.setItem(key, next);
+  return next;
+};
+
 const isAuthSessionMissingError = (error: unknown): boolean => {
   if (!error || typeof error !== 'object') return false;
   const message = 'message' in error ? String((error as { message?: unknown }).message || '') : '';
@@ -136,9 +146,10 @@ export const studyService = {
     const local = getStoredData();
 
     try {
+      const sessionId = getClientSessionId();
       const [{ data: attemptsData, error: attemptsError }, { data: summaryData, error: summaryError }] = await Promise.all([
-        supabase.from(ATTEMPTS_TABLE).select('*').order('attempted_at', { ascending: false }).limit(200),
-        supabase.from(SUMMARY_TABLE).select('*').eq('id', SUMMARY_ID).maybeSingle(),
+        supabase.from(ATTEMPTS_TABLE).select('*').eq('session_id', sessionId).order('attempted_at', { ascending: false }).limit(200),
+        supabase.from(SUMMARY_TABLE).select('*').eq('session_id', sessionId).maybeSingle(),
       ]);
 
       if (attemptsError) throw attemptsError;
@@ -191,6 +202,7 @@ export const studyService = {
       const { error } = await supabase.from(ATTEMPTS_TABLE).insert([
         {
           id: attempt.id,
+          session_id: getClientSessionId(),
           question_id: attempt.question_id,
           subject: attempt.subject,
           topic: attempt.topic,
@@ -204,7 +216,8 @@ export const studyService = {
       const { error: summaryUpsertError } = await supabase.from(SUMMARY_TABLE).upsert(
         [
           {
-            id: SUMMARY_ID,
+            id: getClientSessionId(),
+            session_id: getClientSessionId(),
             total_attempts: nextData.summary.totalAttempts,
             total_correct: nextData.summary.totalCorrect,
             accuracy: nextData.summary.accuracy,
@@ -215,7 +228,7 @@ export const studyService = {
             updated_at: new Date().toISOString(),
           },
         ],
-        { onConflict: 'id' }
+        { onConflict: 'session_id' }
       );
 
       if (summaryUpsertError) {
