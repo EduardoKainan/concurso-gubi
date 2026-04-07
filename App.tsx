@@ -155,6 +155,15 @@ const App: React.FC = () => {
     setShowAnswer(false);
   };
 
+  const goToPreviousQuestion = () => {
+    if (!selectedQuestion || !filteredQuestions.length) return;
+    const currentIndex = filteredQuestions.findIndex((item) => item.id === selectedQuestion.id);
+    const previousQuestion = filteredQuestions[(currentIndex - 1 + filteredQuestions.length) % filteredQuestions.length];
+    setSelectedQuestion(previousQuestion);
+    setSelectedOption(null);
+    setShowAnswer(false);
+  };
+
   const saveAttempt = async () => {
     if (selectedOption === null || showAnswer || saving) return;
 
@@ -369,77 +378,57 @@ const App: React.FC = () => {
   );
 
   const renderQuestions = () => (
-    <div className="grid gap-6 xl:grid-cols-[340px,1fr]">
-      <div className="space-y-4 lg:space-y-6">
-        <div className={`${panel} p-4 sm:p-5`}>
-          <div className="mb-4 flex items-center gap-2 text-white">
-            <Filter size={18} />
-            <h2 className="text-lg font-semibold">Filtros inteligentes</h2>
+    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+      <div className={`${panel} p-4 sm:p-5`}>
+        <div className="mb-4 flex items-center gap-2 text-white">
+          <Filter size={18} />
+          <h2 className="text-lg font-semibold">Resolver questões</h2>
+        </div>
+        <div className="grid gap-3 lg:grid-cols-[1.1fr,0.8fr,1.2fr]">
+          <div>
+            <label className="mb-2 block text-sm text-slate-400">Disciplina</label>
+            <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
+              {subjectOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
-            <div>
-              <label className="mb-2 block text-sm text-slate-400">Disciplina</label>
-              <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
-                {subjectOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="mb-2 block text-sm text-slate-400">Dificuldade</label>
-              <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
-                {levelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
-              </select>
-            </div>
-            <div className="sm:col-span-2 xl:col-span-1">
-              <label className="mb-2 block text-sm text-slate-400">Buscar no enunciado/tópico</label>
-              <div className="flex min-h-[48px] items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3">
-                <Search size={16} className="text-slate-400" />
-                <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Ex.: licitações, Excel, crase" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500" />
-              </div>
+          <div>
+            <label className="mb-2 block text-sm text-slate-400">Dificuldade</label>
+            <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
+              {levelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="mb-2 block text-sm text-slate-400">Buscar</label>
+            <div className="flex min-h-[48px] items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3">
+              <Search size={16} className="text-slate-400" />
+              <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Tema, palavra-chave ou banca mental" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500" />
             </div>
           </div>
-          <div className="mt-4 rounded-2xl bg-indigo-500/10 p-4 text-sm text-indigo-100">
-            {filteredQuestions.length} questões no bloco atual.
-          </div>
-          {recommendation && (
-            <div className="mt-4 rounded-2xl border border-amber-400/20 bg-amber-500/10 p-4 text-sm text-amber-100">
-              <p className="font-medium">Recomendação do motor</p>
-              <p className="mt-1">{recommendation.subject} • {recommendation.topic}</p>
-              <p className="mt-2 text-amber-50/90">Meta: {recommendation.targetQuestions} questões + {recommendation.reviewCount} revisão(ões).</p>
-            </div>
-          )}
         </div>
 
-        <div className={`${panel} p-4 sm:p-5`}>
-          <div className="mb-4 flex items-center justify-between gap-3">
-            <h2 className="text-lg font-semibold text-white">Fila de questões</h2>
-            <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Toque para abrir</span>
+        <div className="mt-4 grid gap-3 lg:grid-cols-[1fr,220px]">
+          <div className="rounded-2xl border border-indigo-400/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">
+            {filteredQuestions.length} questões no recorte atual.
           </div>
-          <div className="max-h-[360px] space-y-3 overflow-auto pr-1 sm:max-h-[540px]">
-            {filteredQuestions.map((question) => {
-              const active = selectedQuestion.id === question.id;
-              return (
-                <button
-                  key={question.id}
-                  onClick={() => {
-                    setSelectedQuestion(question);
-                    setSelectedOption(null);
-                    setShowAnswer(false);
-                  }}
-                  className={`w-full rounded-2xl border p-4 text-left transition ${active ? 'border-indigo-400 bg-indigo-500/10' : 'border-white/10 bg-white/5 hover:bg-white/10'}`}
-                >
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-medium text-white">{question.subject}</span>
-                    <span className="rounded-full bg-white/5 px-2 py-1 text-xs text-slate-300">{question.level}</span>
-                  </div>
-                  <p className="mt-2 text-sm text-slate-400">{question.topic}</p>
-                </button>
-              );
-            })}
-            {!filteredQuestions.length && (
-              <div className="rounded-2xl border border-dashed border-white/10 p-4 text-sm text-slate-400">
-                Nenhuma questão encontrada com esse recorte.
-              </div>
-            )}
+          <div>
+            <label className="mb-2 block text-sm text-slate-400">Questão atual</label>
+            <select
+              value={selectedQuestion?.id ?? ''}
+              onChange={(e) => {
+                const nextQuestion = filteredQuestions.find((item) => item.id === Number(e.target.value));
+                if (!nextQuestion) return;
+                setSelectedQuestion(nextQuestion);
+                setSelectedOption(null);
+                setShowAnswer(false);
+              }}
+              className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none"
+            >
+              {filteredQuestions.map((question, index) => (
+                <option key={question.id} value={question.id}>
+                  {`#${index + 1} • ${question.subject}`}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
       </div>
@@ -447,22 +436,27 @@ const App: React.FC = () => {
       <div className={`${panel} overflow-hidden p-4 sm:p-6 lg:p-8`}>
         {selectedQuestion ? (
           <>
-            <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
+            <div className="mb-6 flex flex-col gap-4 border-b border-white/10 pb-6 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Questão comentada</p>
+                <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Modo foco</p>
                 <h1 className="mt-2 text-2xl font-semibold text-white">{selectedQuestion.subject}</h1>
-                <p className="mt-1 text-slate-400">{selectedQuestion.topic}</p>
+                <p className="mt-2 text-slate-400">{selectedQuestion.topic}</p>
               </div>
-              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-300">
-                Dificuldade: <span className="font-medium text-white">{selectedQuestion.level}</span>
+              <div className="flex flex-wrap gap-2 text-sm">
+                <span className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-slate-300">
+                  Questão {Math.max(filteredQuestions.findIndex((item) => item.id === selectedQuestion.id) + 1, 1)} de {filteredQuestions.length}
+                </span>
+                <span className="rounded-2xl border border-white/10 bg-white/5 px-4 py-2 text-slate-300">
+                  Dificuldade: <span className="font-medium text-white">{selectedQuestion.level}</span>
+                </span>
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 text-slate-200 sm:p-5">
-              <p className="text-sm leading-7 sm:text-base">{selectedQuestion.statement}</p>
+            <div className="rounded-3xl border border-white/10 bg-slate-900/80 p-5 text-slate-100 sm:p-6">
+              <p className="text-base leading-8 sm:text-lg">{selectedQuestion.statement}</p>
             </div>
 
-            <div className="mt-6 space-y-3">
+            <div className="mt-8 space-y-3">
               {selectedQuestion.options.map((option, index) => {
                 const chosen = selectedOption === index;
                 const correct = selectedQuestion.correctIndex === index;
@@ -477,9 +471,9 @@ const App: React.FC = () => {
                   : 'border-white/10 bg-white/5 hover:bg-white/10';
 
                 return (
-                  <button key={index} onClick={() => !showAnswer && setSelectedOption(index)} className={`w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] ${revealedClass}`}>
-                    <div className="flex items-start gap-3 text-sm text-slate-200 sm:items-center">
-                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 font-medium">{String.fromCharCode(65 + index)}</span>
+                  <button key={index} onClick={() => !showAnswer && setSelectedOption(index)} className={`w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] sm:p-5 ${revealedClass}`}>
+                    <div className="flex items-start gap-4 text-sm text-slate-200 sm:text-base">
+                      <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-white/10 font-semibold">{String.fromCharCode(65 + index)}</span>
                       <span>{option}</span>
                     </div>
                   </button>
@@ -487,19 +481,25 @@ const App: React.FC = () => {
               })}
             </div>
 
-            <div className="mt-6 hidden flex-wrap gap-3 sm:flex">
+            <div className="mt-8 flex flex-wrap gap-3">
               <button onClick={saveAttempt} disabled={selectedOption === null || saving} className="rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60">
                 {saving ? 'Salvando...' : 'Corrigir e salvar tentativa'}
               </button>
               <button onClick={() => { setSelectedOption(null); setShowAnswer(false); }} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
                 Limpar resposta
               </button>
+              <button onClick={goToPreviousQuestion} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
+                Questão anterior
+              </button>
+              <button onClick={goToNextQuestion} className="rounded-2xl border border-white/10 px-5 py-3 font-medium text-slate-200 transition hover:bg-white/5">
+                Pular para próxima
+              </button>
             </div>
 
             {showAnswer && (
-              <div className="mt-6 space-y-4">
+              <div className="mt-8 space-y-4 border-t border-white/10 pt-8">
                 <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4 sm:p-5">
-                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Comentário do mentor</p>
+                  <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Feedback</p>
                   <p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p>
                 </div>
                 <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300 sm:p-5">
