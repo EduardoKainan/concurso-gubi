@@ -42,6 +42,7 @@ const navItems: { key: StudyViewKey; label: string; icon: React.ComponentType<an
 
 const appShell = 'min-h-screen bg-slate-950 text-slate-100';
 const panel = 'rounded-3xl border border-white/10 bg-white/5 backdrop-blur-sm shadow-2xl shadow-slate-950/30';
+const mobileSafePadding = 'px-4 sm:px-6 lg:px-8';
 
 const App: React.FC = () => {
   const [currentView, setCurrentView] = useState<StudyViewKey>('dashboard');
@@ -109,6 +110,7 @@ const App: React.FC = () => {
   const recommendation = dashboardData?.recommendation;
   const topWeakness = dashboardData?.topicPerformance?.[0];
   const reviewDueNow = dashboardData?.reviewQueue.filter((item) => item.status !== 'scheduled') || [];
+  const currentViewLabel = navItems.find((item) => item.key === currentView)?.label || 'Dashboard';
 
   const subjectOptions = useMemo(() => ['Todas', ...Array.from(new Set(questionBank.map((item) => item.subject)))], [questionBank]);
   const levelOptions = ['Todas', 'Fácil', 'Médio', 'Difícil'];
@@ -341,7 +343,7 @@ const App: React.FC = () => {
                 <p className="text-sm text-slate-400">24h, 7d e 14d baseados em erro</p>
               </div>
             </div>
-            <div className="space-y-3">
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
               {(dashboardData?.reviewQueue || []).slice(0, 4).map((item) => (
                 <ReviewQueueCard key={item.id} item={item} />
               ))}
@@ -368,28 +370,28 @@ const App: React.FC = () => {
 
   const renderQuestions = () => (
     <div className="grid gap-6 xl:grid-cols-[340px,1fr]">
-      <div className="space-y-6">
-        <div className={`${panel} p-4`}>
+      <div className="space-y-4 lg:space-y-6">
+        <div className={`${panel} p-4 sm:p-5`}>
           <div className="mb-4 flex items-center gap-2 text-white">
             <Filter size={18} />
             <h2 className="text-lg font-semibold">Filtros inteligentes</h2>
           </div>
-          <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             <div>
               <label className="mb-2 block text-sm text-slate-400">Disciplina</label>
-              <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
+              <select value={subjectFilter} onChange={(e) => setSubjectFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
                 {subjectOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </div>
             <div>
               <label className="mb-2 block text-sm text-slate-400">Dificuldade</label>
-              <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
+              <select value={levelFilter} onChange={(e) => setLevelFilter(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
                 {levelOptions.map((item) => <option key={item} value={item}>{item}</option>)}
               </select>
             </div>
-            <div>
+            <div className="sm:col-span-2 xl:col-span-1">
               <label className="mb-2 block text-sm text-slate-400">Buscar no enunciado/tópico</label>
-              <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3">
+              <div className="flex min-h-[48px] items-center gap-2 rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3">
                 <Search size={16} className="text-slate-400" />
                 <input value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} placeholder="Ex.: licitações, Excel, crase" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500" />
               </div>
@@ -407,9 +409,12 @@ const App: React.FC = () => {
           )}
         </div>
 
-        <div className={`${panel} p-4`}>
-          <h2 className="mb-4 text-lg font-semibold text-white">Fila de questões</h2>
-          <div className="max-h-[540px] space-y-3 overflow-auto pr-1">
+        <div className={`${panel} p-4 sm:p-5`}>
+          <div className="mb-4 flex items-center justify-between gap-3">
+            <h2 className="text-lg font-semibold text-white">Fila de questões</h2>
+            <span className="rounded-full bg-white/5 px-3 py-1 text-xs text-slate-300">Toque para abrir</span>
+          </div>
+          <div className="max-h-[360px] space-y-3 overflow-auto pr-1 sm:max-h-[540px]">
             {filteredQuestions.map((question) => {
               const active = selectedQuestion.id === question.id;
               return (
@@ -439,7 +444,7 @@ const App: React.FC = () => {
         </div>
       </div>
 
-      <div className={`${panel} p-6 lg:p-8`}>
+      <div className={`${panel} overflow-hidden p-4 sm:p-6 lg:p-8`}>
         {selectedQuestion ? (
           <>
             <div className="mb-6 flex flex-wrap items-start justify-between gap-4">
@@ -453,8 +458,8 @@ const App: React.FC = () => {
               </div>
             </div>
 
-            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-5 text-slate-200">
-              <p className="leading-7">{selectedQuestion.statement}</p>
+            <div className="rounded-3xl border border-white/10 bg-slate-900/60 p-4 text-slate-200 sm:p-5">
+              <p className="text-sm leading-7 sm:text-base">{selectedQuestion.statement}</p>
             </div>
 
             <div className="mt-6 space-y-3">
@@ -472,9 +477,9 @@ const App: React.FC = () => {
                   : 'border-white/10 bg-white/5 hover:bg-white/10';
 
                 return (
-                  <button key={index} onClick={() => !showAnswer && setSelectedOption(index)} className={`w-full rounded-2xl border p-4 text-left transition ${revealedClass}`}>
-                    <div className="flex items-center gap-3 text-sm text-slate-200">
-                      <span className="flex h-7 w-7 items-center justify-center rounded-full bg-white/10 font-medium">{String.fromCharCode(65 + index)}</span>
+                  <button key={index} onClick={() => !showAnswer && setSelectedOption(index)} className={`w-full rounded-2xl border p-4 text-left transition active:scale-[0.99] ${revealedClass}`}>
+                    <div className="flex items-start gap-3 text-sm text-slate-200 sm:items-center">
+                      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-white/10 font-medium">{String.fromCharCode(65 + index)}</span>
                       <span>{option}</span>
                     </div>
                   </button>
@@ -482,7 +487,7 @@ const App: React.FC = () => {
               })}
             </div>
 
-            <div className="mt-6 flex flex-wrap gap-3">
+            <div className="mt-6 hidden flex-wrap gap-3 sm:flex">
               <button onClick={saveAttempt} disabled={selectedOption === null || saving} className="rounded-2xl bg-indigo-500 px-5 py-3 font-medium text-white transition hover:bg-indigo-400 disabled:cursor-not-allowed disabled:opacity-60">
                 {saving ? 'Salvando...' : 'Corrigir e salvar tentativa'}
               </button>
@@ -493,11 +498,11 @@ const App: React.FC = () => {
 
             {showAnswer && (
               <div className="mt-6 space-y-4">
-                <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-5">
+                <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4 sm:p-5">
                   <p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Comentário do mentor</p>
                   <p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p>
                 </div>
-                <div className="rounded-3xl border border-white/10 bg-white/5 p-5 text-sm text-slate-300">
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300 sm:p-5">
                   {lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso. Se errou, a revisão entra sozinha na fila temporal.' : 'Selecione uma alternativa para salvar o resultado.'}
                 </div>
                 <div className="flex flex-wrap gap-3">
@@ -660,7 +665,7 @@ const App: React.FC = () => {
             </div>
             <span className="rounded-full bg-amber-500/10 px-3 py-1 text-sm text-amber-200">{reviewDueNow.length} urgentes</span>
           </div>
-          <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             {(dashboardData?.reviewQueue || []).map((item) => <ReviewQueueCard key={item.id} item={item} />)}
             {!(dashboardData?.reviewQueue || []).length && (
               <div className="rounded-2xl border border-dashed border-white/10 p-6 text-sm text-slate-400">Nenhuma revisão montada ainda.</div>
@@ -676,7 +681,7 @@ const App: React.FC = () => {
             </div>
             <span className="rounded-full bg-rose-500/10 px-3 py-1 text-sm text-rose-200">Top {dashboardData?.topicPerformance.length || 0}</span>
           </div>
-          <div className="space-y-3">
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             {(dashboardData?.topicPerformance || []).slice(0, 12).map((item) => (
               <div key={`${item.subject}-${item.topic}`} className="rounded-2xl border border-white/10 bg-slate-900/60 p-4">
                 <div className="flex items-start justify-between gap-3">
@@ -716,7 +721,7 @@ const App: React.FC = () => {
           </div>
           <div>
             <label className="mb-2 block text-sm text-slate-400">Escolha um tema</label>
-            <select value={selectedPromptId} onChange={(e) => setSelectedPromptId(e.target.value)} className="w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
+            <select value={selectedPromptId} onChange={(e) => setSelectedPromptId(e.target.value)} className="min-h-[48px] w-full rounded-2xl border border-white/10 bg-slate-900/70 px-4 py-3 text-sm text-white outline-none">
               {essayPrompts.map((item) => <option key={item.id} value={item.id}>{item.title}</option>)}
             </select>
           </div>
@@ -746,7 +751,7 @@ const App: React.FC = () => {
                 </div>
               </div>
 
-              <div className="mt-5 grid gap-4 sm:grid-cols-3">
+              <div className="mt-5 grid gap-3 sm:grid-cols-3">
                 <MiniStat label="Palavras" value={`${essayDraft.trim() ? essayDraft.trim().split(/\s+/).filter(Boolean).length : 0}`} />
                 <MiniStat label="Status" value={draftMeta ? 'rascunho' : 'vazio'} />
                 <MiniStat label="Últ. save" value={draftMeta?.updatedAt ? new Date(draftMeta.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--'} />
@@ -754,7 +759,7 @@ const App: React.FC = () => {
 
               <div className="mt-5">
                 <label className="mb-2 block text-sm text-slate-400">Seu rascunho</label>
-                <textarea value={essayDraft} onChange={(e) => setEssayDraft(e.target.value)} rows={12} placeholder="Escreva aqui sua introdução, desenvolvimento e conclusão..." className="w-full rounded-3xl border border-white/10 bg-slate-900/70 p-4 text-sm text-white outline-none placeholder:text-slate-500" />
+                <textarea value={essayDraft} onChange={(e) => setEssayDraft(e.target.value)} rows={12} placeholder="Escreva aqui sua introdução, desenvolvimento e conclusão..." className="min-h-[320px] w-full rounded-3xl border border-white/10 bg-slate-900/70 p-4 text-sm leading-7 text-white outline-none placeholder:text-slate-500 sm:min-h-[360px]" />
               </div>
 
               <div className="mt-4 flex flex-wrap gap-3">
@@ -832,22 +837,23 @@ const App: React.FC = () => {
 
         <div className="flex min-h-screen flex-1 flex-col">
           <header className="sticky top-0 z-20 border-b border-white/10 bg-slate-950/80 backdrop-blur-xl">
-            <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
-              <div className="flex items-center gap-3">
+            <div className={`flex items-start justify-between gap-4 py-4 ${mobileSafePadding}`}>
+              <div className="flex items-start gap-3">
                 <button onClick={() => setMenuOpen(true)} className="rounded-2xl border border-white/10 p-2 text-slate-200 lg:hidden">
                   <Menu size={20} />
                 </button>
                 <div>
-                  <p className="text-sm text-slate-400">Agente mentor de concurso</p>
-                  <h1 className="text-lg font-semibold text-white">MVP navegável do aluno Eduardo</h1>
+                  <p className="text-xs text-slate-400 sm:text-sm">Agente mentor de concurso</p>
+                  <h1 className="text-base font-semibold text-white sm:text-lg">MVP navegável do aluno Eduardo</h1>
+                  <p className="mt-1 text-xs text-slate-500 lg:hidden">{currentViewLabel}</p>
                 </div>
               </div>
-              <div className="flex items-center gap-3">
+              <div className="flex items-start gap-3">
                 <div className={`hidden items-center gap-2 rounded-2xl border px-3 py-2 text-sm md:flex ${dashboardData?.source === 'supabase' ? 'border-emerald-400/20 bg-emerald-500/10 text-emerald-200' : 'border-amber-400/20 bg-amber-500/10 text-amber-200'}`}>
                   <Signal size={16} /> {dashboardData?.source === 'supabase' ? 'Supabase online' : 'Fallback local'}
                 </div>
                 <button className="rounded-2xl border border-white/10 p-3 text-slate-300"><Bell size={18} /></button>
-                <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2">
+                <div className="hidden items-center gap-3 rounded-2xl border border-white/10 bg-white/5 px-3 py-2 sm:flex">
                   <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-indigo-500/20 text-indigo-200"><User size={18} /></div>
                   <div>
                     <p className="text-sm font-medium text-white">Eduardo K.</p>
@@ -858,7 +864,7 @@ const App: React.FC = () => {
             </div>
           </header>
 
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">
+          <main className={`flex-1 py-6 pb-28 lg:pb-6 ${mobileSafePadding}`}>
             {loading || !dashboardData ? (
               <div className={`${panel} flex items-center gap-3 p-6 text-slate-300`}>
                 <RefreshCcw size={18} className="animate-spin" /> Carregando progresso...
@@ -879,7 +885,7 @@ const App: React.FC = () => {
       {menuOpen && (
         <div className="fixed inset-0 z-50 lg:hidden">
           <div className="absolute inset-0 bg-slate-950/70" onClick={() => setMenuOpen(false)} />
-          <div className="absolute left-0 top-0 h-full w-80 border-r border-white/10 bg-slate-950 p-6">
+          <div className="absolute left-0 top-0 h-full w-[88vw] max-w-80 border-r border-white/10 bg-slate-950 p-5 sm:p-6">
             <div className="mb-6 flex items-center justify-between">
               <div>
                 <p className="text-sm text-slate-400">Mentor</p>
@@ -890,6 +896,45 @@ const App: React.FC = () => {
               </button>
             </div>
             <SidebarContent currentView={currentView} onChangeView={(view) => { setCurrentView(view); setMenuOpen(false); }} source={dashboardData?.source ?? 'local'} recommendation={recommendation?.subject || 'Aguardando histórico'} />
+          </div>
+        </div>
+      )}
+
+      <nav className="fixed inset-x-0 bottom-0 z-40 border-t border-white/10 bg-slate-950/95 px-2 py-2 backdrop-blur-xl lg:hidden">
+        <div className="grid grid-cols-5 gap-1">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const active = currentView === item.key;
+            return (
+              <button
+                key={item.key}
+                onClick={() => setCurrentView(item.key)}
+                className={`flex min-h-[60px] flex-col items-center justify-center gap-1 rounded-2xl px-2 py-2 text-[11px] font-medium transition ${active ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:bg-white/5 hover:text-slate-200'}`}
+              >
+                <Icon size={18} />
+                <span className="truncate">{item.label.split(' ')[0]}</span>
+              </button>
+            );
+          })}
+        </div>
+      </nav>
+
+      {currentView === 'questoes' && selectedQuestion && (
+        <div className="fixed inset-x-0 bottom-[84px] z-30 px-4 sm:hidden">
+          <div className="rounded-3xl border border-white/10 bg-slate-950/95 p-3 shadow-2xl shadow-slate-950/40 backdrop-blur-xl">
+            <div className="flex items-center gap-2">
+              <button onClick={saveAttempt} disabled={selectedOption === null || saving} className="flex-1 rounded-2xl bg-indigo-500 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">
+                {saving ? 'Salvando...' : 'Corrigir'}
+              </button>
+              <button onClick={() => { setSelectedOption(null); setShowAnswer(false); }} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-200">
+                Limpar
+              </button>
+              {showAnswer && (
+                <button onClick={goToNextQuestion} className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-white">
+                  Próxima
+                </button>
+              )}
+            </div>
           </div>
         </div>
       )}
