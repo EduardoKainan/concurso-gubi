@@ -368,3 +368,23 @@ export interface StudyDashboardData {
   reviewQueue: StudyReviewItem[];
   recommendation: StudyRecommendation;
 }
+
+export interface StudyQuestionSessionState {
+  currentQuestionId: number | null;
+  currentIndex: number;
+  queueQuestionIds: number[];
+  answeredQuestionIds: number[];
+  reviewQuestionIds: number[];
+  totalQuestions: number;
+  completedQuestions: number;
+  remainingQuestions: number;
+  completedCycles: number;
+  mode: 'continuacao' | 'revisao' | 'reinicio';
+  updatedAt: string;
+  lastAnsweredQuestionId?: number;
+}
+
+export interface StudyAttemptResult {
+  dashboardData: StudyDashboardData;
+  questionSession: StudyQuestionSessionState;
+}

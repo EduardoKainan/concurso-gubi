@@ -6,7 +6,7 @@ import { SidebarContent } from './components/study/views';
 import { DashboardView, EssaysView, PlanView, ProgressView, QuestionsView } from './components/study/views';
 import { MiniStat } from './components/study/ui';
 import { studyService } from './services/studyService';
-import { StudyDashboardData, StudyEssayDidacticResponse, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyViewKey } from './types';
+import { StudyDashboardData, StudyEssayDidacticResponse, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyQuestionSessionState, StudyViewKey } from './types';
 
 const appShell = shellStyles.app;
 const panel = shellStyles.panel;
@@ -21,6 +21,7 @@ const App: React.FC = () => {
   const [showAnswer, setShowAnswer] = useState(false);
   const [lastRecordedQuestionId, setLastRecordedQuestionId] = useState<number | null>(null);
   const [dashboardData, setDashboardData] = useState<StudyDashboardData | null>(null);
+  const [questionSession, setQuestionSession] = useState<StudyQuestionSessionState | null>(null);
   const [essayPrompts, setEssayPrompts] = useState<StudyEssayPrompt[]>([]);
   const [essayHistory, setEssayHistory] = useState<StudyEssayEntry[]>([]);
   const [selectedPromptId, setSelectedPromptId] = useState('');
@@ -31,21 +32,20 @@ const App: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [savingEssay, setSavingEssay] = useState(false);
   const [generatingDidactic, setGeneratingDidactic] = useState(false);
-  const [subjectFilter, setSubjectFilter] = useState('Todas');
-  const [levelFilter, setLevelFilter] = useState('Todas');
-  const [searchTerm, setSearchTerm] = useState('');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       const loadedQuestions = await studyService.getQuestionBank();
       const data = await studyService.getDashboardData(loadedQuestions);
+      const session = await studyService.getQuestionSession(loadedQuestions, data.attempts);
       const prompts = studyService.getEssayPrompts();
       const history = await studyService.getEssayHistory();
       const savedDraft = studyService.getEssayDraft();
 
       setQuestionBank(loadedQuestions);
-      setSelectedQuestion(loadedQuestions[0] || localQuestions[0]);
+      setQuestionSession(session);
+      setSelectedQuestion(loadedQuestions.find((item) => item.id === session.currentQuestionId) || loadedQuestions[0] || localQuestions[0]);
       setDashboardData(data);
       setEssayPrompts(prompts);
       setSelectedPromptId(savedDraft?.promptId || prompts[0]?.id || '');
@@ -80,23 +80,6 @@ const App: React.FC = () => {
   const reviewDueNow = dashboardData?.reviewQueue.filter((item) => item.status !== 'scheduled') || [];
   const currentViewLabel = navItems.find((item) => item.key === currentView)?.label || 'Dashboard';
 
-  const subjectOptions = useMemo(() => ['Todas', ...Array.from(new Set(questionBank.map((item) => item.subject)))], [questionBank]);
-  const levelOptions = ['Todas', 'Fácil', 'Médio', 'Difícil'];
-
-  const filteredQuestions = useMemo(() => questionBank.filter((question) => {
-    const matchesSubject = subjectFilter === 'Todas' || question.subject === subjectFilter;
-    const matchesLevel = levelFilter === 'Todas' || question.level === levelFilter;
-    const haystack = `${question.subject} ${question.topic} ${question.statement}`.toLowerCase();
-    const matchesSearch = !searchTerm.trim() || haystack.includes(searchTerm.toLowerCase());
-    return matchesSubject && matchesLevel && matchesSearch;
-  }), [questionBank, subjectFilter, levelFilter, searchTerm]);
-
-  useEffect(() => {
-    if (!filteredQuestions.length) return;
-    const exists = filteredQuestions.some((item) => item.id === selectedQuestion?.id);
-    if (!exists) resetQuestionState(filteredQuestions[0]);
-  }, [filteredQuestions, selectedQuestion]);
-
   const selectedPrompt = useMemo(() => essayPrompts.find((item) => item.id === selectedPromptId) || essayPrompts[0], [essayPrompts, selectedPromptId]);
 
   useEffect(() => {
@@ -114,17 +97,31 @@ const App: React.FC = () => {
     setShowAnswer(false);
   };
 
-  const goToQuestionOffset = (offset: number) => {
-    if (!selectedQuestion || !filteredQuestions.length) return;
-    const currentIndex = filteredQuestions.findIndex((item) => item.id === selectedQuestion.id);
-    const nextQuestion = filteredQuestions[(currentIndex + offset + filteredQuestions.length) % filteredQuestions.length];
-    resetQuestionState(nextQuestion);
+  const openQuestionById = async (questionId: number) => {
+    if (!dashboardData) return;
+    const nextSession = await studyService.setCurrentQuestion(questionId, questionBank, dashboardData.attempts);
+    setQuestionSession(nextSession);
+    const nextQuestion = questionBank.find((item) => item.id === questionId);
+    if (nextQuestion) resetQuestionState(nextQuestion);
+  };
+
+  const goToQuestionOffset = async (offset: number) => {
+    if (!questionSession?.queueQuestionIds.length || !selectedQuestion) return;
+    const currentIndex = Math.max(questionSession.queueQuestionIds.indexOf(selectedQuestion.id), 0);
+    const nextQuestionId = questionSession.queueQuestionIds[(currentIndex + offset + questionSession.queueQuestionIds.length) % questionSession.queueQuestionIds.length];
+    if (nextQuestionId) await openQuestionById(nextQuestionId);
+  };
+
+  const goToRecommendedQuestion = async () => {
+    if (!questionSession?.currentQuestionId) return;
+    const nextQuestion = questionBank.find((item) => item.id === questionSession.currentQuestionId);
+    if (nextQuestion) resetQuestionState(nextQuestion);
   };
 
   const saveAttempt = async () => {
     if (!selectedQuestion || selectedOption === null || showAnswer || saving) return;
     setSaving(true);
-    const nextData = await studyService.recordAttempt({
+    const result = await studyService.recordAttempt({
       question_id: selectedQuestion.id,
       subject: selectedQuestion.subject,
       topic: selectedQuestion.topic,
@@ -132,7 +129,8 @@ const App: React.FC = () => {
       is_correct: selectedQuestion.correctIndex === selectedOption,
     }, questionBank);
 
-    setDashboardData(nextData);
+    setDashboardData(result.dashboardData);
+    setQuestionSession(result.questionSession);
     setLastRecordedQuestionId(selectedQuestion.id);
     setShowAnswer(true);
     setSaving(false);
@@ -239,7 +237,7 @@ const App: React.FC = () => {
             ) : (
               <>
                 {currentView === 'dashboard' && <DashboardView dashboardData={dashboardData} overallProgress={overallProgress} averageAccuracy={averageAccuracy} totalReviews={totalReviews} essayHistoryLength={essayHistory.length} recommendation={recommendation} topWeakness={topWeakness} reviewDueNowCount={reviewDueNow.length} onChangeView={setCurrentView} />}
-                {currentView === 'questoes' && <QuestionsView subjectFilter={subjectFilter} levelFilter={levelFilter} subjectOptions={subjectOptions} levelOptions={levelOptions} searchTerm={searchTerm} onSubjectFilterChange={setSubjectFilter} onLevelFilterChange={setLevelFilter} onSearchTermChange={setSearchTerm} filteredQuestions={filteredQuestions} selectedQuestion={selectedQuestion} selectedOption={selectedOption} showAnswer={showAnswer} saving={saving} lastRecordedQuestionId={lastRecordedQuestionId} onSelectQuestion={resetQuestionState} onSelectOption={setSelectedOption} onSaveAttempt={saveAttempt} onResetAnswer={() => { setSelectedOption(null); setShowAnswer(false); }} onPrevQuestion={() => goToQuestionOffset(-1)} onNextQuestion={() => goToQuestionOffset(1)} />}
+                {currentView === 'questoes' && <QuestionsView questionSession={questionSession} selectedQuestion={selectedQuestion} selectedOption={selectedOption} showAnswer={showAnswer} saving={saving} lastRecordedQuestionId={lastRecordedQuestionId} source={dashboardData.source} onSelectOption={setSelectedOption} onSaveAttempt={saveAttempt} onResetAnswer={() => { setSelectedOption(null); setShowAnswer(false); }} onPrevQuestion={() => { void goToQuestionOffset(-1); }} onNextQuestion={() => { void goToQuestionOffset(1); }} onResumeRecommendedQuestion={() => { void goToRecommendedQuestion(); }} />}
                 {currentView === 'plano' && <PlanView dashboardData={dashboardData} essayHistoryLength={essayHistory.length} />}
                 {currentView === 'evolucao' && <ProgressView dashboardData={dashboardData} reviewDueNowCount={reviewDueNow.length} />}
                 {currentView === 'discursivas' && <EssaysView essayPrompts={essayPrompts} selectedPromptId={selectedPromptId} selectedPrompt={selectedPrompt} essayDraft={essayDraft} draftMeta={draftMeta} savingEssay={savingEssay} generatingDidactic={generatingDidactic} didacticResponse={didacticResponse} essayHistory={essayHistory} onPromptChange={setSelectedPromptId} onEssayDraftChange={setEssayDraft} onSaveEssay={saveEssay} onGenerateDidacticEssay={generateDidacticEssay} onClearDraft={clearEssayDraft} renderDidacticResponse={renderDidacticResponse} />}
@@ -280,7 +278,7 @@ const App: React.FC = () => {
             <div className="flex items-center gap-2">
               <button onClick={saveAttempt} disabled={selectedOption === null || saving} className="flex-1 rounded-2xl bg-gradient-to-r from-indigo-500 to-cyan-400 px-4 py-3 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-60">{saving ? 'Salvando...' : 'Corrigir'}</button>
               <button onClick={() => { setSelectedOption(null); setShowAnswer(false); }} className="rounded-2xl border border-white/10 px-4 py-3 text-sm font-medium text-slate-200">Limpar</button>
-              {showAnswer && <button onClick={() => goToQuestionOffset(1)} className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-white">Próxima</button>}
+              {showAnswer && <button onClick={() => { void goToRecommendedQuestion(); }} className="rounded-2xl bg-emerald-500 px-4 py-3 text-sm font-medium text-white">Próxima</button>}
             </div>
           </div>
         </div>

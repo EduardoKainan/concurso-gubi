@@ -1,7 +1,7 @@
 import React from 'react';
-import { CalendarDays, ChevronRight, Clock3, FileText, Filter, Flame, PlayCircle, Search, Sparkles, Target, Brain, Trophy, ChevronLeft, CheckCircle2 } from 'lucide-react';
+import { CalendarDays, ChevronRight, Clock3, FileText, Flame, PlayCircle, Sparkles, Target, Brain, Trophy, ChevronLeft, CheckCircle2, RotateCcw } from 'lucide-react';
 import { analystPriorityTrail, studyPlan } from '../../data/studySeed';
-import { StudyDashboardData, StudyEssayDidacticResponse, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyViewKey } from '../../types';
+import { StudyDashboardData, StudyEssayDidacticResponse, StudyEssayDraft, StudyEssayEntry, StudyEssayPrompt, StudyQuestionItem, StudyQuestionSessionState, StudyViewKey } from '../../types';
 import { shellStyles } from './config';
 import { ActionItem, ChecklistItem, EmptyStateCard, InsightCard, MetricCard, MiniPill, MiniStat, ReviewQueueCard, SectionHeader, SidebarContent, Tag } from './ui';
 
@@ -116,21 +116,26 @@ export const DashboardView = ({ dashboardData, overallProgress, averageAccuracy,
   </div>
 );
 
-export const QuestionsView = ({ subjectFilter, levelFilter, subjectOptions, levelOptions, searchTerm, onSubjectFilterChange, onLevelFilterChange, onSearchTermChange, filteredQuestions, selectedQuestion, selectedOption, showAnswer, saving, lastRecordedQuestionId, onSelectQuestion, onSelectOption, onSaveAttempt, onResetAnswer, onPrevQuestion, onNextQuestion }: { subjectFilter: string; levelFilter: string; subjectOptions: string[]; levelOptions: string[]; searchTerm: string; onSubjectFilterChange: (value: string) => void; onLevelFilterChange: (value: string) => void; onSearchTermChange: (value: string) => void; filteredQuestions: StudyQuestionItem[]; selectedQuestion?: StudyQuestionItem; selectedOption: number | null; showAnswer: boolean; saving: boolean; lastRecordedQuestionId: number | null; onSelectQuestion: (question: StudyQuestionItem) => void; onSelectOption: (index: number) => void; onSaveAttempt: () => void; onResetAnswer: () => void; onPrevQuestion: () => void; onNextQuestion: () => void; }) => (
+export const QuestionsView = ({ questionSession, selectedQuestion, selectedOption, showAnswer, saving, lastRecordedQuestionId, source, onSelectOption, onSaveAttempt, onResetAnswer, onPrevQuestion, onNextQuestion, onResumeRecommendedQuestion }: { questionSession: StudyQuestionSessionState | null; selectedQuestion?: StudyQuestionItem; selectedOption: number | null; showAnswer: boolean; saving: boolean; lastRecordedQuestionId: number | null; source: StudyDashboardData['source']; onSelectOption: (index: number) => void; onSaveAttempt: () => void; onResetAnswer: () => void; onPrevQuestion: () => void; onNextQuestion: () => void; onResumeRecommendedQuestion: () => void; }) => (
   <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
     <div className={`${panel} p-4 sm:p-5`}>
-      <div className="mb-4 flex items-center gap-2 text-white"><Filter size={18} /><h2 className="text-lg font-semibold">Resolver questões</h2></div>
-      <div className="grid gap-3 lg:grid-cols-[1.1fr,0.8fr,1.2fr]">
-        <SelectField label="Disciplina" value={subjectFilter} onChange={onSubjectFilterChange} options={subjectOptions} />
-        <SelectField label="Dificuldade" value={levelFilter} onChange={onLevelFilterChange} options={levelOptions} />
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
         <div>
-          <label className="mb-2 block text-sm text-slate-400">Buscar</label>
-          <div className="flex min-h-[48px] items-center gap-2 rounded-2xl border border-white/10 bg-slate-950/75 px-4 py-3"><Search size={16} className="text-slate-400" /><input value={searchTerm} onChange={(e) => onSearchTermChange(e.target.value)} placeholder="Tema, palavra-chave ou banca mental" className="w-full bg-transparent text-sm text-white outline-none placeholder:text-slate-500" /></div>
+          <p className="text-sm uppercase tracking-[0.25em] text-slate-500">Sessão contínua</p>
+          <h2 className="mt-2 text-lg font-semibold text-white">Fluxo puro de resolução</h2>
+          <p className="mt-2 text-sm text-slate-400">Sem filtros. O app retoma de onde você parou e prioriza questões inéditas antes de reciclar revisões.</p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-sm">
+          <Tag>{source === 'supabase' ? 'Sync Supabase' : 'Fallback local'}</Tag>
+          <Tag>Modo {questionSession?.mode || 'continuacao'}</Tag>
+          <Tag>{questionSession?.completedQuestions || 0}/{questionSession?.totalQuestions || 0} respondidas</Tag>
         </div>
       </div>
-      <div className="mt-4 grid gap-3 lg:grid-cols-[1fr,240px]">
-        <div className="rounded-2xl border border-indigo-400/20 bg-indigo-500/10 px-4 py-3 text-sm text-indigo-100">{filteredQuestions.length} questões no recorte atual.</div>
-        <SelectField label="Questão atual" value={String(selectedQuestion?.id ?? '')} onChange={(value) => { const question = filteredQuestions.find((item) => item.id === Number(value)); if (question) onSelectQuestion(question); }} options={filteredQuestions.map((question, index) => ({ label: `#${index + 1} • ${question.subject}`, value: String(question.id) }))} />
+      <div className="mt-4 grid gap-3 md:grid-cols-4">
+        <MiniStat label="Na fila" value={`${questionSession?.queueQuestionIds.length || 0}`} />
+        <MiniStat label="Restantes" value={`${questionSession?.remainingQuestions || 0}`} />
+        <MiniStat label="Revisões" value={`${questionSession?.reviewQuestionIds.length || 0}`} />
+        <MiniStat label="Último sync" value={questionSession?.updatedAt ? new Date(questionSession.updatedAt).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' }) : '--:--'} />
       </div>
     </div>
 
@@ -144,7 +149,8 @@ export const QuestionsView = ({ subjectFilter, levelFilter, subjectOptions, leve
               <p className="mt-2 text-slate-400">{selectedQuestion.topic}</p>
             </div>
             <div className="flex flex-wrap gap-2 text-sm">
-              <Tag>Questão {Math.max(filteredQuestions.findIndex((item) => item.id === selectedQuestion.id) + 1, 1)} de {filteredQuestions.length}</Tag>
+              <Tag>Questão #{selectedQuestion.id}</Tag>
+              <Tag>Posição {Math.max((questionSession?.queueQuestionIds.indexOf(selectedQuestion.id) ?? 0) + 1, 1)} de {questionSession?.queueQuestionIds.length || 1}</Tag>
               <Tag>Dificuldade: <span className="font-medium text-white">{selectedQuestion.level}</span></Tag>
             </div>
           </div>
@@ -166,16 +172,17 @@ export const QuestionsView = ({ subjectFilter, levelFilter, subjectOptions, leve
             <button onClick={onResetAnswer} className={ghostButton}>Limpar resposta</button>
             <button onClick={onPrevQuestion} className={ghostButton}><ChevronLeft size={16} className="mr-2 inline" />Questão anterior</button>
             <button onClick={onNextQuestion} className={ghostButton}>Pular para próxima <ChevronRight size={16} className="ml-2 inline" /></button>
+            {showAnswer && <button onClick={onResumeRecommendedQuestion} className="inline-flex items-center rounded-2xl border border-emerald-400/30 bg-emerald-500/10 px-5 py-3 font-medium text-emerald-100 transition hover:bg-emerald-500/20"><RotateCcw size={16} className="mr-2" />Abrir próxima da sessão</button>}
           </div>
           {showAnswer ? (
             <div className="mt-8 space-y-4 border-t border-white/10 pt-8">
               <div className="rounded-3xl border border-emerald-400/20 bg-emerald-500/10 p-4 sm:p-5"><p className="text-sm font-medium uppercase tracking-[0.2em] text-emerald-300">Feedback</p><p className="mt-3 text-slate-100">{selectedQuestion.explanation}</p></div>
-              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300 sm:p-5">{lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada com sucesso. Se errou, a revisão entra sozinha na fila temporal.' : 'Selecione uma alternativa para salvar o resultado.'}</div>
-              <div className="flex flex-wrap gap-3"><button onClick={onNextQuestion} className="rounded-2xl bg-emerald-500 px-5 py-3 font-medium text-white transition hover:bg-emerald-400">Próxima questão</button><button onClick={onResetAnswer} className={ghostButton}>Refazer esta questão</button></div>
+              <div className="rounded-3xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300 sm:p-5">{lastRecordedQuestionId === selectedQuestion.id ? 'Tentativa registrada. A sessão já apontou a próxima questão para você continuar sem repetir bloco à toa.' : 'Selecione uma alternativa para salvar o resultado.'}</div>
+              <div className="flex flex-wrap gap-3"><button onClick={onResumeRecommendedQuestion} className="rounded-2xl bg-emerald-500 px-5 py-3 font-medium text-white transition hover:bg-emerald-400">Próxima questão</button><button onClick={onResetAnswer} className={ghostButton}>Refazer esta questão</button></div>
             </div>
           ) : null}
         </>
-      ) : <EmptyStateCard>Ajuste os filtros para carregar um bloco.</EmptyStateCard>}
+      ) : <EmptyStateCard>Nenhuma questão disponível na sessão atual.</EmptyStateCard>}
     </div>
   </div>
 );

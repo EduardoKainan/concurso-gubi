@@ -8,6 +8,7 @@ import {
 } from '../data/studySeed';
 import {
   StudyAttempt,
+  StudyAttemptResult,
   StudyDashboardData,
   StudyEssayDraft,
   StudyEssayDidacticResponse,
@@ -15,6 +16,7 @@ import {
   StudyEssayPrompt,
   StudyErrorInsight,
   StudyQuestionItem,
+  StudyQuestionSessionState,
   StudyRecommendation,
   StudyReviewItem,
   StudySubjectProgress,
@@ -27,9 +29,11 @@ const SUMMARY_TABLE = 'study_progress_summaries';
 const SUBJECTS_TABLE = 'study_subjects';
 const TOPICS_TABLE = 'study_topics';
 const QUESTIONS_TABLE = 'study_questions';
+const QUESTION_SESSIONS_TABLE = 'study_question_sessions';
 const ESSAYS_TABLE = 'study_essay_entries';
 const ESSAY_DRAFTS_TABLE = 'study_essay_drafts';
 const STORAGE_KEY = 'adroi.study.v3';
+const QUESTION_SESSION_STORAGE_KEY = 'adroi.study.questionSession.v1';
 const ESSAY_STORAGE_KEY = 'adroi.study.essays.v2';
 const ESSAY_DRAFT_STORAGE_KEY = 'adroi.study.essayDraft.v1';
 const SUMMARY_ID = 'public-demo';
@@ -140,6 +144,23 @@ const getStoredData = (): StudyDashboardData => {
 const persistLocal = (data: Omit<StudyDashboardData, 'source'>) => {
   if (typeof window === 'undefined') return;
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+};
+
+const getStoredQuestionSession = (): StudyQuestionSessionState | null => {
+  if (typeof window === 'undefined') return null;
+  const raw = window.localStorage.getItem(QUESTION_SESSION_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    return JSON.parse(raw) as StudyQuestionSessionState;
+  } catch {
+    return null;
+  }
+};
+
+const persistQuestionSessionLocal = (data: StudyQuestionSessionState) => {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(QUESTION_SESSION_STORAGE_KEY, JSON.stringify(data));
 };
 
 const getStoredEssays = (): StudyEssayEntry[] => {
@@ -505,6 +526,114 @@ const mergeSummaryData = (calculated: Omit<StudyDashboardData, 'source'>, summar
   },
 });
 
+const normalizeQuestionIds = (value: unknown): number[] => {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => Number(item))
+    .filter((item, index, array) => Number.isFinite(item) && array.indexOf(item) === index);
+};
+
+const pickNextQuestionId = (queueQuestionIds: number[], orderedQuestionIds: number[], referenceId?: number | null): number | null => {
+  if (!queueQuestionIds.length) return null;
+  if (!referenceId) return queueQuestionIds[0];
+
+  const queueSet = new Set(queueQuestionIds);
+  const referenceIndex = orderedQuestionIds.indexOf(referenceId);
+
+  if (referenceIndex >= 0) {
+    for (let index = referenceIndex + 1; index < orderedQuestionIds.length; index += 1) {
+      if (queueSet.has(orderedQuestionIds[index])) return orderedQuestionIds[index];
+    }
+  }
+
+  return queueQuestionIds[0];
+};
+
+const buildQuestionSessionState = (
+  questions: StudyQuestionItem[],
+  attempts: StudyAttempt[],
+  reviewQueue: StudyReviewItem[],
+  persistedState?: Partial<StudyQuestionSessionState> | null,
+  overrideCurrentQuestionId?: number | null,
+  referenceQuestionId?: number | null
+): StudyQuestionSessionState => {
+  const orderedQuestionIds = questions.map((question) => question.id);
+  const answeredQuestionIds = orderedQuestionIds.filter((questionId) => attempts.some((attempt) => attempt.question_id === questionId));
+  const unansweredQuestionIds = orderedQuestionIds.filter((questionId) => !answeredQuestionIds.includes(questionId));
+  const reviewQuestionIds = reviewQueue.map((item) => item.questionId).filter((questionId, index, array) => array.indexOf(questionId) === index);
+
+  let mode: StudyQuestionSessionState['mode'] = 'continuacao';
+  let queueQuestionIds = unansweredQuestionIds;
+
+  if (!queueQuestionIds.length && reviewQuestionIds.length) {
+    mode = 'revisao';
+    queueQuestionIds = reviewQuestionIds;
+  } else if (!queueQuestionIds.length) {
+    mode = 'reinicio';
+    queueQuestionIds = orderedQuestionIds;
+  }
+
+  const preferredQuestionId = overrideCurrentQuestionId && queueQuestionIds.includes(overrideCurrentQuestionId)
+    ? overrideCurrentQuestionId
+    : null;
+  const currentQuestionId = preferredQuestionId ?? pickNextQuestionId(
+    queueQuestionIds,
+    orderedQuestionIds,
+    referenceQuestionId ?? persistedState?.currentQuestionId ?? persistedState?.lastAnsweredQuestionId ?? null
+  );
+  const currentIndex = currentQuestionId ? Math.max(queueQuestionIds.indexOf(currentQuestionId), 0) : 0;
+  const completedQuestions = answeredQuestionIds.length;
+  const remainingQuestions = Math.max(questions.length - completedQuestions, 0);
+  const completedCycles = Number(persistedState?.completedCycles) || 0;
+
+  return {
+    currentQuestionId,
+    currentIndex,
+    queueQuestionIds,
+    answeredQuestionIds,
+    reviewQuestionIds,
+    totalQuestions: questions.length,
+    completedQuestions,
+    remainingQuestions,
+    completedCycles,
+    mode,
+    updatedAt: new Date().toISOString(),
+    lastAnsweredQuestionId: persistedState?.lastAnsweredQuestionId,
+  };
+};
+
+const toQuestionSessionState = (row: any, questions: StudyQuestionItem[], attempts: StudyAttempt[], reviewQueue: StudyReviewItem[]): StudyQuestionSessionState => buildQuestionSessionState(
+  questions,
+  attempts,
+  reviewQueue,
+  {
+    currentQuestionId: row?.current_question_id ? Number(row.current_question_id) : null,
+    completedCycles: Number(row?.completed_cycles) || 0,
+    lastAnsweredQuestionId: row?.last_answered_question_id ? Number(row.last_answered_question_id) : undefined,
+    queueQuestionIds: normalizeQuestionIds(row?.queue_question_ids),
+    answeredQuestionIds: normalizeQuestionIds(row?.answered_question_ids),
+    reviewQuestionIds: normalizeQuestionIds(row?.review_question_ids),
+  }
+);
+
+const persistQuestionSessionRemote = async (data: StudyQuestionSessionState) => {
+  const { error } = await supabase.from(QUESTION_SESSIONS_TABLE).upsert([
+    {
+      session_id: getClientSessionId(),
+      current_question_id: data.currentQuestionId,
+      queue_question_ids: data.queueQuestionIds,
+      answered_question_ids: data.answeredQuestionIds,
+      review_question_ids: data.reviewQuestionIds,
+      completed_cycles: data.completedCycles,
+      last_answered_question_id: data.lastAnsweredQuestionId ?? null,
+      mode: data.mode,
+      updated_at: data.updatedAt,
+    },
+  ], { onConflict: 'session_id' });
+
+  if (error) throw error;
+};
+
 export const studyService = {
   async getQuestionBank(): Promise<StudyQuestionItem[]> {
     try {
@@ -557,7 +686,54 @@ export const studyService = {
     }
   },
 
-  async recordAttempt(input: Omit<StudyAttempt, 'id' | 'attempted_at'>, questions: StudyQuestionItem[]): Promise<StudyDashboardData> {
+  async getQuestionSession(questions: StudyQuestionItem[], attempts: StudyAttempt[]): Promise<StudyQuestionSessionState> {
+    const localSession = buildQuestionSessionState(
+      questions,
+      attempts,
+      calculateReviewQueue(attempts),
+      getStoredQuestionSession()
+    );
+
+    try {
+      const { data, error } = await supabase
+        .from(QUESTION_SESSIONS_TABLE)
+        .select('*')
+        .eq('session_id', getClientSessionId())
+        .maybeSingle();
+
+      if (error) throw error;
+
+      const nextSession = toQuestionSessionState(data, questions, attempts, calculateReviewQueue(attempts));
+      persistQuestionSessionLocal(nextSession);
+      return nextSession;
+    } catch (error) {
+      console.info('Sessão de questões em fallback local.', error);
+      persistQuestionSessionLocal(localSession);
+      return localSession;
+    }
+  },
+
+  async setCurrentQuestion(questionId: number, questions: StudyQuestionItem[], attempts: StudyAttempt[]): Promise<StudyQuestionSessionState> {
+    const nextSession = buildQuestionSessionState(
+      questions,
+      attempts,
+      calculateReviewQueue(attempts),
+      getStoredQuestionSession(),
+      questionId
+    );
+
+    persistQuestionSessionLocal(nextSession);
+
+    try {
+      await persistQuestionSessionRemote(nextSession);
+      return nextSession;
+    } catch (error) {
+      console.info('Questão atual mantida localmente.', error);
+      return nextSession;
+    }
+  },
+
+  async recordAttempt(input: Omit<StudyAttempt, 'id' | 'attempted_at'>, questions: StudyQuestionItem[]): Promise<StudyAttemptResult> {
     const attempt: StudyAttempt = {
       ...input,
       id: typeof crypto !== 'undefined' && 'randomUUID' in crypto ? crypto.randomUUID() : String(Date.now()),
@@ -567,7 +743,20 @@ export const studyService = {
     const localState = getStoredData();
     const nextAttempts = [attempt, ...localState.attempts];
     const nextData = calculateDashboardData(nextAttempts, questions);
+    const nextQuestionSession = buildQuestionSessionState(
+      questions,
+      nextAttempts,
+      nextData.reviewQueue,
+      {
+        ...getStoredQuestionSession(),
+        lastAnsweredQuestionId: attempt.question_id,
+      },
+      null,
+      attempt.question_id
+    );
+
     persistLocal(nextData);
+    persistQuestionSessionLocal(nextQuestionSession);
 
     try {
       const sessionId = getClientSessionId();
@@ -608,14 +797,16 @@ export const studyService = {
 
       if (summaryUpsertError) throw summaryUpsertError;
 
-      return { source: 'supabase', ...nextData };
+      await persistQuestionSessionRemote(nextQuestionSession);
+
+      return { dashboardData: { source: 'supabase', ...nextData }, questionSession: nextQuestionSession };
     } catch (error) {
       if (isAuthSessionMissingError(error)) {
         console.info('Supabase recusou escrita por falta de sessão auth. Verifique RLS/policies públicas no projeto.');
       } else {
         console.warn('Falha ao persistir no Supabase, mantendo progresso local.', error);
       }
-      return { source: 'local', ...nextData };
+      return { dashboardData: { source: 'local', ...nextData }, questionSession: nextQuestionSession };
     }
   },
 
